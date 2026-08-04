@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MyBooks — a free, private reading tracker</title>
+<meta name="description" content="Keep track of what you're reading, waiting on, and have finished. No install, no hosting, no account, no cost. Your data stays on your own device.">
+<style>
+  :root {
+    --bg: #F2F2F7;
+    --card: #FFFFFF;
+    --blue: #007AFF;
+    --label: #1C1C1E;
+    --secondary-label: #6C6C70;
+    --tertiary-label: #AEAEB2;
+    --separator: #C6C6C8;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--label);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+    line-height: 1.55;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 0 20px; }
+
+  nav { padding: 18px 0; }
+  nav .wrap { display: flex; justify-content: space-between; align-items: center; }
+  nav .brand { font-weight: 700; font-size: 15px; }
+  nav a { color: var(--secondary-label); text-decoration: none; font-size: 14px; margin-left: 18px; }
+  nav a:hover { color: var(--blue); }
+
+  header.hero { padding: 40px 0 10px; text-align: center; }
+  header.hero .kicker { font-size: 14px; font-weight: 600; color: var(--blue); margin-bottom: 6px; }
+  header.hero h1 { font-size: 34px; line-height: 1.25; margin: 0 0 14px; font-weight: 700; }
+  header.hero p.lede { font-size: 17px; color: var(--secondary-label); max-width: 560px; margin: 0 auto 26px; }
+
+  .cta {
+    display: inline-block; background: var(--blue); color: #fff; text-decoration: none;
+    font-size: 16px; font-weight: 600; padding: 13px 26px; border-radius: 12px;
+  }
+  .cta:hover { opacity: 0.9; }
+  .cta-note { font-size: 13px; color: var(--tertiary-label); margin-top: 12px; }
+  .cta-note a { color: var(--secondary-label); }
+
+  .screens { display: flex; gap: 18px; justify-content: center; margin: 40px 0 8px; flex-wrap: wrap; }
+  .screens figure { margin: 0; text-align: center; }
+  .screens img {
+    width: 220px; max-width: 42vw; border-radius: 14px; border: 0.5px solid var(--separator);
+    display: block;
+  }
+  .screens figcaption { font-size: 13px; color: var(--tertiary-label); margin-top: 8px; }
+
+  section { padding: 40px 0; border-top: 0.5px solid var(--separator); }
+  section h2 { font-size: 22px; margin: 0 0 16px; }
+
+  .feature-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .feature-grid .card {
+    background: var(--card); border-radius: 12px; padding: 18px; border: 0.5px solid var(--separator);
+  }
+  .feature-grid h3 { font-size: 15px; margin: 0 0 6px; }
+  .feature-grid p { font-size: 13px; color: var(--secondary-label); margin: 0; }
+
+  ol.steps, ul.plain { padding-left: 20px; margin: 0; }
+  ol.steps li, ul.plain li { margin-bottom: 10px; font-size: 15px; }
+  ul.plain { list-style: none; padding-left: 0; }
+  ul.plain li { padding-left: 20px; position: relative; }
+  ul.plain li::before { content: "\2013"; position: absolute; left: 0; color: var(--tertiary-label); }
+
+  p { font-size: 15px; }
+  a { color: var(--blue); }
+
+  footer { padding: 30px 0 60px; text-align: center; }
+  footer .links a { color: var(--secondary-label); text-decoration: none; font-size: 13px; margin: 0 10px; }
+  footer .links a:hover { color: var(--blue); }
+  footer .fine { font-size: 12px; color: var(--tertiary-label); margin-top: 16px; }
+
+  @media (max-width: 560px) {
+    .feature-grid { grid-template-columns: 1fr; }
+    header.hero h1 { font-size: 28px; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <span class="brand">MyBooks</span>
+    <span>
+      <a href="https://github.com/CyberAdvisor/MyBooks/blob/main/README.md">README</a>
+      <a href="https://github.com/CyberAdvisor/MyBooks">Source on GitHub</a>
+    </span>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="kicker">MyBooks</div>
+    <h1>Always know what you're reading, waiting on, and have finished.</h1>
+    <p class="lede">
+      Free. No install. No hosting. No account. Just a page that remembers your library for you.
+    </p>
+    <a class="cta" href="/mybooks/">Open MyBooks &rarr;</a>
+    <div class="cta-note">
+      Opens straight in your browser. Works on phone, tablet, or desktop.
+      New to it? See the <a href="https://github.com/CyberAdvisor/MyBooks/blob/main/README.md">README</a> for everything it does.
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="screens">
+    <figure>
+      <img src="images/list-view.png" alt="MyBooks list view, grouped by reading status with search and quick actions">
+      <figcaption>List view</figcaption>
+    </figure>
+    <figure>
+      <img src="images/detail-view.png" alt="MyBooks detail view for a single book, showing cover, category, rating, and notes">
+      <figcaption>Detail view</figcaption>
+    </figure>
+  </div>
+</div>
+
+<section>
+  <div class="wrap">
+    <h2>Nothing to install. Nothing to host.</h2>
+    <p style="color: var(--secondary-label);">
+      This isn't an app you download, and it isn't something you have to set up a server for.
+      It's a single web page that runs entirely in your browser. Open the link, use it, and
+      (optionally) add it to your home screen for quick access &mdash; that's just a bookmark
+      shortcut, not a real installation.
+    </p>
+    <div class="feature-grid">
+      <div class="card">
+        <h3>Free</h3>
+        <p>No subscription, no ads, no in-app purchases. It costs nothing to use because it costs almost nothing to run.</p>
+      </div>
+      <div class="card">
+        <h3>No install</h3>
+        <p>It's a web page, not an app store download. Open it in any modern browser and it works immediately.</p>
+      </div>
+      <div class="card">
+        <h3>No hosting to set up</h3>
+        <p>It's already hosted. You don't need your own server, domain, or technical setup of any kind.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>How it works</h2>
+    <ol class="steps">
+      <li>Add a book by searching <a href="https://openlibrary.org">Open Library</a>, a free public database &mdash; or add one manually if there's no good match.</li>
+      <li>Track its status: Reading, To Read, Waiting, Read, or Archive, with a one-tap quick action to move it along.</li>
+      <li>Fill in a star rating, where you have it (Kindle, Kobo, Library, Personal, or your own), and free-text notes.</li>
+      <li>Browse everything by status, by author, or by category &mdash; or import a whole library at once from a CSV file.</li>
+    </ol>
+    <p><a href="https://github.com/CyberAdvisor/MyBooks/blob/main/README.md">See the full README &rarr;</a> for every feature, with details on categories, CSV import, and backup/restore.</p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Your data stays yours</h2>
+    <p style="color: var(--secondary-label);">
+      There are no accounts and no server storing your library. Everything you track is saved
+      only in your own browser's storage, on your own device. The only outside request this
+      page ever makes is looking up book information from Open Library &mdash; your library itself
+      is never sent anywhere.
+    </p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Limitations &mdash; read this before you rely on it</h2>
+    <ul class="plain" style="color: var(--secondary-label);">
+      <li><strong style="color: var(--label);">No sync between devices.</strong> Your library lives in one browser on one device.</li>
+      <li><strong style="color: var(--label);">Your data can be lost, especially on iOS.</strong> Browsers can clear local storage under storage pressure, after a restart, or after a period of inactivity.</li>
+      <li><strong style="color: var(--label);">Backups are manual, not automatic.</strong> Use the Backup tab occasionally, especially before an iOS update.</li>
+      <li><strong style="color: var(--label);">Depends on Open Library's data.</strong> Gaps or errors in their database carry through here.</li>
+    </ul>
+    <p style="color: var(--secondary-label);">See the <a href="https://github.com/CyberAdvisor/MyBooks/blob/main/README.md">README</a> for the complete list, plus how self-hosting and backups work.</p>
+  </div>
+</section>
+
+<footer>
+  <a class="cta" href="/mybooks/">Open MyBooks &rarr;</a>
+  <div class="links" style="margin-top: 20px;">
+    <a href="https://github.com/CyberAdvisor/MyBooks/blob/main/README.md">README</a>
+    <a href="https://github.com/CyberAdvisor/MyBooks">Source on GitHub</a>
+    <a href="https://github.com/CyberAdvisor/MyBooks/issues">Report an issue</a>
+  </div>
+  <div class="fine">Built as a free hobby project. The code is open source &mdash; see the README if you'd rather run your own private copy.</div>
+</footer>
+
+</body>
+</html>
