@@ -85,7 +85,7 @@ This app was built with [Claude](https://claude.ai). To make changes (add a feat
 
 - No login, no cloud sync, no cross-device support
 - No notifications - you have to open the app to see what's new
-- Relies entirely on Open Library data for in-app search - if a book isn't in their database, or their data has gaps (missing synopsis, wrong cover, etc.), that carries through to the app
+- Relies entirely on Open Library data for in-app search - if a book isn't in their database, their data has gaps (missing synopsis, wrong cover, etc.), or their service is temporarily down or overloaded, that carries through to the app. A failed search shows a clear "couldn't reach Open Library" message rather than looking like a broken/empty result, but there's no fallback source - you can still add a book manually via "Add Without a Match" while it's down.
 - A cover can be replaced but not cleared once one is set, in this version
 
 ## Filling in covers after a CSV import
