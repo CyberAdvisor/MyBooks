@@ -232,8 +232,8 @@ function renderSeriesMode(allBooks) {
 
     const card = document.createElement('div');
     card.className = 'card';
-    series.forEach(({ name, count }) => {
-      card.appendChild(buildIndexRow(name, count, 'series'));
+    series.forEach(({ name, count, author }) => {
+      card.appendChild(buildIndexRow(name, count, 'series', author));
     });
     container.appendChild(card);
   });
@@ -278,14 +278,21 @@ function openDrilldown(type, value) {
   renderListView();
 }
 
-/** A simple name/count row used by the Authors, Categories, and Series index views. */
-function buildIndexRow(name, count, indexType) {
+/**
+ * A simple name/count row used by the Authors, Categories, and Series
+ * index views. `subtitle`, when given (currently just Series' author),
+ * renders below the name in the same small/light style as a book row's
+ * author line (.row-author) - omitted entirely when blank, not shown as
+ * an empty line, same convention as buildBookRow's optional lines.
+ */
+function buildIndexRow(name, count, indexType, subtitle) {
   const row = document.createElement('div');
   row.className = 'row';
   row.dataset.indexType = indexType; // 'author' | 'category' | 'series' - read by the delegated click handler
   row.dataset.indexValue = name;
+  const subtitleLine = subtitle ? `<div class="row-author">${escapeHtml(subtitle)}</div>` : '';
   row.innerHTML = `
-    <div class="row-text"><div class="row-title">${escapeHtml(name)}</div></div>
+    <div class="row-text"><div class="row-title">${escapeHtml(name)}</div>${subtitleLine}</div>
     <span class="index-count">${count} ${count === 1 ? 'book' : 'books'}</span>
     <span class="chev-right">›</span>
   `;
@@ -765,6 +772,7 @@ async function applyRefreshMatch() {
   if (Object.keys(changes).length === 0) {
     alert('No new information to fill in from this match (all fields already filled).');
   } else {
+    if (changes.category) addCategoryIfNew(changes.category); // same reason as addBookFromPreview - a filled-in category needs to land in categoryList too
     await db.updateBook(state.currentDetailId, changes);
   }
   state.previewMatch = null;
@@ -899,6 +907,7 @@ async function addBookFromPreview() {
     category: match.category || '',
     coverUrl: match.coverUrl || '',
   });
+  addCategoryIfNew(newBook.category); // a category from Open Library still needs to land in categoryList, not just on the book, or the Categories view will never show it (same fix as CSV import/Restore)
   await db.addBook(newBook);
 
   state.previewMatch = null;

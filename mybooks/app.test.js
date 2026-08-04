@@ -431,6 +431,7 @@ await test('Series index groups by first letter, drilling in orders by series nu
   const seriesRow = Array.from(d.querySelectorAll('#listContent .row')).find((r) => r.dataset.indexValue === 'Dune');
   assert.ok(seriesRow, 'Dune should appear as a series in the index');
   assert.strictEqual(d.querySelectorAll('#listContent .row').length, 1, 'Standalone has no series, so it should not add a second index row');
+  assert.strictEqual(seriesRow.querySelector('.row-author').textContent, 'Frank Herbert', 'series row should show its author as a subtitle, same style as a book row');
 
   seriesRow.dispatchEvent(new window.Event('click', { bubbles: true }));
   await wait();
@@ -484,6 +485,49 @@ await test('CSV import reuses an existing category case-insensitively instead of
   await wait();
 
   assert.deepStrictEqual(Array.from(window.getCategoryList()), ['Fiction'], 'differently-cased match should not create a second entry');
+});
+
+await test('Adding a book from a search match folds its category into the category list', async () => {
+  const window = await createApp();
+  const d = window.document;
+  window.api.findMatches = async () => ([
+    { source: 'openlibrary', title: 'Dune', author: 'Frank Herbert', synopsis: '', category: 'Science Fiction', coverUrl: '' },
+  ]);
+  window.api.enrichMatchSynopsis = async (m) => m;
+  assert.deepStrictEqual(Array.from(window.getCategoryList()), [], 'category list should start empty');
+
+  d.getElementById('tabAdd').click();
+  d.getElementById('addSearchTitle').value = 'Dune';
+  await window.searchAddMatches();
+  await wait();
+  d.querySelector('#addMatchResults .match-item').dispatchEvent(new window.Event('click', { bubbles: true }));
+  await wait();
+  d.getElementById('previewAddBtn').click();
+  await wait();
+
+  assert.deepStrictEqual((await window.db.getAllBooks())[0].category, 'Science Fiction');
+  assert.deepStrictEqual(Array.from(window.getCategoryList()), ['Science Fiction'], 'the match\'s category should now be a real entry in the Categories view, not just sitting on the book unregistered');
+});
+
+await test('Applying a Refresh match that fills in a category folds it into the category list too', async () => {
+  const window = await createApp();
+  const d = window.document;
+  window.api.findMatches = async () => ([
+    { source: 'openlibrary', title: 'Dune', author: 'Frank Herbert', synopsis: '', category: 'Science Fiction', coverUrl: '' },
+  ]);
+  window.api.enrichMatchSynopsis = async (m) => m;
+
+  const id = await window.db.addBook(Object.assign(window.db.emptyBook(), { title: 'Dune', author: 'Frank Herbert' })); // no category yet
+  await window.openDetail(id);
+  d.getElementById('refreshOnlineBtn').click();
+  await wait();
+  d.querySelector('#refreshMatchesList .match-item').dispatchEvent(new window.Event('click', { bubbles: true }));
+  await wait();
+  d.getElementById('previewAddBtn').click(); // reads "Apply" in this context
+  await wait();
+
+  assert.strictEqual((await window.db.getBook(id)).category, 'Science Fiction');
+  assert.deepStrictEqual(Array.from(window.getCategoryList()), ['Science Fiction'], 'category filled in via Refresh should also be registered in the category list');
 });
 
 await test('Edit screen: "+ Add new category..." prompts, adds the category, and selects it', async () => {

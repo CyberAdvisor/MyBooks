@@ -89,13 +89,26 @@ test('buildCategoriesIndex: fixed list order preserved, zero-count categories in
 
 test('buildSeriesIndex: groups by first letter, excludes blank series, counts correctly', () => {
   const books = [
-    { series: 'The Culture' }, { series: 'The Culture' },
-    { series: 'Dune' }, { series: '' }, {},
+    { series: 'The Culture', author: 'Iain M. Banks' }, { series: 'The Culture', author: 'Iain M. Banks' },
+    { series: 'Dune', author: 'Frank Herbert' }, { series: '' }, {},
   ];
   const groups = logic.buildSeriesIndex(books);
   assert.deepStrictEqual(groups.map((g) => g.letter), ['D', 'T']);
-  assert.deepStrictEqual(groups.find((g) => g.letter === 'D').series, [{ name: 'Dune', count: 1 }]);
-  assert.deepStrictEqual(groups.find((g) => g.letter === 'T').series, [{ name: 'The Culture', count: 2 }]);
+  assert.deepStrictEqual(groups.find((g) => g.letter === 'D').series, [{ name: 'Dune', count: 1, author: 'Frank Herbert' }]);
+  assert.deepStrictEqual(groups.find((g) => g.letter === 'T').series, [{ name: 'The Culture', count: 2, author: 'Iain M. Banks' }]);
+});
+
+test('buildSeriesIndex: author is the most common author for that series; blank when none of its books have one', () => {
+  const books = [
+    { series: 'Mixed', author: 'Real Author' },
+    { series: 'Mixed', author: 'Real Author' },
+    { series: 'Mixed', author: 'Ghostwriter' },
+    { series: 'No Author Set' },
+  ];
+  const groups = logic.buildSeriesIndex(books);
+  const flat = groups.flatMap((g) => g.series);
+  assert.strictEqual(flat.find((s) => s.name === 'Mixed').author, 'Real Author', 'more books credit Real Author, so that wins over Ghostwriter');
+  assert.strictEqual(flat.find((s) => s.name === 'No Author Set').author, '');
 });
 
 test('booksBySeries: exact trimmed match, sorted by series number (numbered before unnumbered), then title', () => {

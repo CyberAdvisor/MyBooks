@@ -113,17 +113,42 @@ function buildCategoriesIndex(books, categoryList) {
  * name, with a book count, grouped by first letter. Blank series are
  * excluded entirely - series is optional per-book metadata, like source,
  * so there's no "no series" bucket the way Categories has "Uncategorized".
+ * Each entry also carries `author` - the most common (trimmed) author
+ * among that series' books, so the index can show it as a subtitle the
+ * same way the book list shows author under title. Series are almost
+ * always single-author in practice; on the rare case of a mismatch (a
+ * ghostwritten sequel, an anthology, a typo) this just picks whichever
+ * author appears most often for that series, with ties going to whichever
+ * was encountered first - not meant to be authoritative, just a helpful
+ * label. `author` is '' if none of the series' books have one set.
  */
 function buildSeriesIndex(books) {
-  const counts = new Map();
+  const counts = new Map();          // series name -> book count
+  const authorCounts = new Map();    // series name -> Map(author -> count)
   books.forEach((book) => {
     const name = (book.series || '').trim();
     if (!name) return;
     counts.set(name, (counts.get(name) || 0) + 1);
+
+    const author = (book.author || '').trim();
+    if (!author) return;
+    if (!authorCounts.has(name)) authorCounts.set(name, new Map());
+    const perAuthor = authorCounts.get(name);
+    perAuthor.set(author, (perAuthor.get(author) || 0) + 1);
   });
 
+  const mostCommonAuthor = (name) => {
+    const perAuthor = authorCounts.get(name);
+    if (!perAuthor) return '';
+    let best = '', bestCount = 0;
+    for (const [author, count] of perAuthor) {
+      if (count > bestCount) { best = author; bestCount = count; }
+    }
+    return best;
+  };
+
   const series = Array.from(counts.entries())
-    .map(([name, count]) => ({ name, count }))
+    .map(([name, count]) => ({ name, count, author: mostCommonAuthor(name) }))
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
 
   const groups = [];
