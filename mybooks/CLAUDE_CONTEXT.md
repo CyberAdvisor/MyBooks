@@ -10,6 +10,10 @@ A multi-file (not single-file) HTML/CSS/vanilla-JS app - `index.html`, `style.cs
 
 Google Books is deliberately NOT called from the app itself - see "Google Books: script-only, not in-app" below for why, and `refresh_covers_from_google.py` (in this same folder) for where it actually lives.
 
+## Visual style: dark, iOS-inspired, one palette (not adaptive)
+
+Every color in `style.css` routes through the `:root` custom properties at the top of the file (`--bg`, `--card`, `--blue`, `--label`, etc., plus a few fill/tint helpers: `--fill`, `--fill-raised`, `--blue-tint`, `--placeholder`). The app is dark-themed, fixed - it doesn't switch based on `prefers-color-scheme` or a toggle, it's just always dark. If you touch color anywhere, change the variable in `:root`, not a one-off hex value in a selector; a `grep -n "#" style.css` should only ever turn up the `:root` block itself (plus the star-rating red/yellow/green tiers, which are intentionally hardcoded since they're semantic tier colors, not theme colors). The root landing page (`index.html`, one level up) is a separate file with its own independent copy of a similar dark palette - the two aren't linked, so a change to one doesn't propagate to the other.
+
 ## Architecture: why it's six files, not one
 
 Unlike some similar single-file Claude-built apps, this one deliberately separates DOM wiring from logic:

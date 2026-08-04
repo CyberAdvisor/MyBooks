@@ -2,14 +2,18 @@
    iOS-inspired visual style (grouped lists, nav bar), adapted for the browser. */
 
 :root {
-  --bg: #F2F2F7;
-  --card: #FFFFFF;
-  --blue: #007AFF;
-  --red: #FF3B30;
-  --label: #000000;
-  --secondary-label: #6C6C70;
-  --tertiary-label: #AEAEB2;
-  --separator: #C6C6C8;
+  --bg: #000000;
+  --card: #1C1C1E;
+  --blue: #0A84FF;
+  --red: #FF453A;
+  --label: #FFFFFF;
+  --secondary-label: #98989D;
+  --tertiary-label: #636366;
+  --separator: #38383A;
+  --fill: #2C2C2E;              /* neutral control fill: segmented track, search bar, chips */
+  --fill-raised: #3A3A3C;       /* raised/selected state on top of --fill, e.g. active segment */
+  --blue-tint: rgba(10, 132, 255, 0.22); /* blue-tinted background for badges/chips */
+  --placeholder: #48484A;       /* cover placeholder while no image is set */
 }
 
 * { box-sizing: border-box; }
@@ -65,21 +69,21 @@ body {
 
 /* Segmented control (Status / Authors / Categories) */
 .segmented {
-  display: flex; background: #E3E3E8; border-radius: 9px; padding: 2px; margin-bottom: 8px;
+  display: flex; background: var(--fill); border-radius: 9px; padding: 2px; margin-bottom: 8px;
 }
 .segment {
   flex: 1; text-align: center; padding: 6px 0; font-size: 13px; font-weight: 600;
   color: var(--secondary-label); background: none; border: none; border-radius: 7px;
   cursor: pointer; font-family: inherit;
 }
-.segment.active { background: #fff; color: var(--label); box-shadow: 0 1px 2px rgba(0,0,0,0.15); }
+.segment.active { background: var(--fill-raised); color: var(--label); box-shadow: 0 1px 2px rgba(0,0,0,0.4); }
 
 /* Authors/Categories index rows */
 .index-count { font-size: 13px; color: var(--tertiary-label); flex-shrink: 0; }
 
 /* Search bar */
 .searchbar {
-  background: #E3E3E8;
+  background: var(--fill);
   border-radius: 10px;
   padding: 8px 10px;
   display: flex;
@@ -123,17 +127,17 @@ body {
   border-bottom: 0.5px solid var(--separator); cursor: pointer;
 }
 .row:last-child { border-bottom: none; }
-.row:active { background: #E9E9EB; }
+.row:active { background: var(--fill); }
 
 .cover {
   width: 42px; height: 62px; border-radius: 4px; background-size: cover;
-  background-position: center; background-color: #ccc; flex-shrink: 0;
+  background-position: center; background-color: var(--placeholder); flex-shrink: 0;
   box-shadow: 0 1px 3px rgba(0,0,0,0.25);
 }
 .detail-cover {
   width: 150px; height: 220px; border-radius: 8px; background-size: cover;
-  background-position: center; background-color: #ccc;
-  box-shadow: 0 8px 20px rgba(0,0,0,0.25); margin: 0 auto 14px;
+  background-position: center; background-color: var(--placeholder);
+  box-shadow: 0 8px 20px rgba(0,0,0,0.5); margin: 0 auto 14px;
 }
 
 .row-text { flex: 1; min-width: 0; }
@@ -146,9 +150,9 @@ body {
   white-space: nowrap; flex-shrink: 0;
 }
 .stars { font-size: 14px; letter-spacing: 1px; white-space: nowrap; flex-shrink: 0; }
-.stars-red { color: #C0392B; }
-.stars-yellow { color: #B8860B; }
-.stars-green { color: #2E7D32; }
+.stars-red { color: #FF6961; }
+.stars-yellow { color: #FFD60A; }
+.stars-green { color: #32D74B; }
 .row-action-btn {
   font-size: 12px; color: var(--blue); background: none; border: 1px solid var(--blue);
   border-radius: 20px; padding: 4px 10px; flex-shrink: 0; cursor: pointer; font-family: inherit;
@@ -166,11 +170,11 @@ body {
 .detail-author { font-size: 15px; color: var(--secondary-label); margin-top: 3px; }
 .detail-badges { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; justify-content: center; }
 .badge { font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 20px; }
-.badge-status { background: #DCEBFF; color: var(--blue); }
+.badge-status { background: var(--blue-tint); color: var(--blue); }
 
 /* Cover editing (Edit Book view): click + paste an image, or Upload Photo */
 .detail-cover.editable { cursor: pointer; outline: none; }
-.detail-cover.editable:focus { box-shadow: 0 0 0 3px rgba(0,122,255,0.35); }
+.detail-cover.editable:focus { box-shadow: 0 0 0 3px rgba(10,132,255,0.45); }
 .detail-cover.editable.no-cover { display: flex; align-items: center; justify-content: center; }
 .detail-cover.editable.no-cover::after {
   content: "Click, then paste (⌘V) an image";
@@ -188,8 +192,8 @@ body {
 .field-label { font-size: 15px; flex-shrink: 0; }
 .field-value { font-size: 15px; color: var(--secondary-label); text-align: right; }
 .field-value.multi { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
-.chip { font-size: 12px; background: #E3E3E8; color: var(--secondary-label); padding: 3px 9px; border-radius: 20px; }
-.chip.removable { display: flex; align-items: center; gap: 5px; background: #DCEBFF; color: var(--blue); cursor: pointer; }
+.chip { font-size: 12px; background: var(--fill); color: var(--secondary-label); padding: 3px 9px; border-radius: 20px; }
+.chip.removable { display: flex; align-items: center; gap: 5px; background: var(--blue-tint); color: var(--blue); cursor: pointer; }
 .chip.add-chip { background: transparent; border: 1px dashed var(--tertiary-label); color: var(--secondary-label); cursor: pointer; }
 
 .group-label { font-size: 13px; font-weight: 600; color: var(--secondary-label); text-transform: uppercase; letter-spacing: 0.4px; padding: 6px 16px 6px 30px; }
@@ -215,7 +219,7 @@ body {
 /* Match picker (Add Book) */
 .match-item { padding: 12px 14px; border-bottom: 0.5px solid var(--separator); cursor: pointer; display: flex; gap: 12px; align-items: center; }
 .match-item:last-child { border-bottom: none; }
-.match-item:active { background: #E9E9EB; }
+.match-item:active { background: var(--fill); }
 .match-text { flex: 1; }
 .match-title { font-size: 15px; font-weight: 600; }
 .match-author { font-size: 13px; color: var(--secondary-label); }
@@ -237,7 +241,7 @@ body {
 /* Tab bar */
 .tabbar {
   position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
-  width: 100%; max-width: 480px; height: 76px; background: rgba(249,249,249,0.96);
+  width: 100%; max-width: 480px; height: 76px; background: rgba(20,20,22,0.92);
   backdrop-filter: blur(20px); border-top: 0.5px solid var(--separator);
   display: flex; padding-top: 8px;
 }
