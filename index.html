@@ -7,13 +7,13 @@
 <meta name="description" content="Keep track of what you're reading, waiting on, and have finished. No install, no hosting, no account, no cost. Your data stays on your own device.">
 <style>
   :root {
-    --bg: #F2F2F7;
-    --card: #FFFFFF;
-    --blue: #007AFF;
-    --label: #1C1C1E;
-    --secondary-label: #6C6C70;
-    --tertiary-label: #AEAEB2;
-    --separator: #C6C6C8;
+    --bg: #000000;
+    --card: #1C1C1E;
+    --blue: #0A84FF;
+    --label: #FFFFFF;
+    --secondary-label: #98989D;
+    --tertiary-label: #636366;
+    --separator: #38383A;
   }
   * { box-sizing: border-box; }
   body {
@@ -43,6 +43,8 @@
   .cta:hover { opacity: 0.9; }
   .cta-note { font-size: 13px; color: var(--tertiary-label); margin-top: 12px; }
   .cta-note a { color: var(--secondary-label); }
+
+  .kofi { margin-bottom: 18px; }
 
   .screens { display: flex; gap: 18px; justify-content: center; margin: 40px 0 8px; flex-wrap: wrap; }
   .screens figure { margin: 0; text-align: center; }
@@ -100,7 +102,11 @@
     <h1>Always know what you're reading, waiting on, and have finished.</h1>
     <p class="lede">
       Free. No install. No hosting. No account. Just a page that remembers your library for you.
+      It's free for everyone to use, though donations to help fund minimal running costs are always welcome.
     </p>
+    <div class="kofi">
+      <a href="https://ko-fi.com/Z8O623D716" target="_blank" rel="noopener"><img height="36" style="border:0px;height:36px;" src="https://storage.ko-fi.com/cdn/kofi6.png?v=6" alt="Buy Me a Coffee at ko-fi.com"></a>
+    </div>
     <a class="cta" href="/mybooks/">Open MyBooks &rarr;</a>
     <div class="cta-note">
       Opens straight in your browser. Works on phone, tablet, or desktop.
