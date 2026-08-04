@@ -107,11 +107,59 @@ function buildCategoriesIndex(books, categoryList) {
   return [...named, { name: 'Uncategorized', count: uncategorizedCount }];
 }
 
+/**
+ * Builds an alphabetically-grouped Series index from a list of books, the
+ * same shape as buildAuthorsIndex: one entry per distinct (trimmed) series
+ * name, with a book count, grouped by first letter. Blank series are
+ * excluded entirely - series is optional per-book metadata, like source,
+ * so there's no "no series" bucket the way Categories has "Uncategorized".
+ */
+function buildSeriesIndex(books) {
+  const counts = new Map();
+  books.forEach((book) => {
+    const name = (book.series || '').trim();
+    if (!name) return;
+    counts.set(name, (counts.get(name) || 0) + 1);
+  });
+
+  const series = Array.from(counts.entries())
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+
+  const groups = [];
+  let currentLetter = null;
+  series.forEach((s) => {
+    const letter = s.name.charAt(0).toUpperCase();
+    if (letter !== currentLetter) {
+      groups.push({ letter, series: [] });
+      currentLetter = letter;
+    }
+    groups[groups.length - 1].series.push(s);
+  });
+  return groups;
+}
+
 /** Books by a specific author (exact, trimmed match), sorted alphabetically by title. */
 function booksByAuthor(books, authorName) {
   return books
     .filter((b) => (b.author || '').trim() === authorName)
     .sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+}
+
+/**
+ * Books in a specific series (exact, trimmed match), sorted by series
+ * number when present (numbered before unnumbered), then by title.
+ */
+function booksBySeries(books, seriesName) {
+  return books
+    .filter((b) => (b.series || '').trim() === seriesName)
+    .sort((a, b) => {
+      const an = a.seriesNumber, bn = b.seriesNumber;
+      if (an != null && bn != null) return an - bn;
+      if (an != null) return -1;
+      if (bn != null) return 1;
+      return (a.title || '').localeCompare(b.title || '');
+    });
 }
 
 /**
@@ -128,7 +176,8 @@ function booksByCategory(books, categoryName) {
 
 const logicExports = {
   STATUS_ORDER, filterBooks, groupBooksByStatus,
-  buildAuthorsIndex, buildCategoriesIndex, booksByAuthor, booksByCategory,
+  buildAuthorsIndex, buildCategoriesIndex, buildSeriesIndex,
+  booksByAuthor, booksByCategory, booksBySeries,
   getStatusQuickAction,
 };
 

@@ -87,6 +87,29 @@ test('buildCategoriesIndex: fixed list order preserved, zero-count categories in
   assert.strictEqual(index.find((c) => c.name === 'Uncategorized').count, 2);
 });
 
+test('buildSeriesIndex: groups by first letter, excludes blank series, counts correctly', () => {
+  const books = [
+    { series: 'The Culture' }, { series: 'The Culture' },
+    { series: 'Dune' }, { series: '' }, {},
+  ];
+  const groups = logic.buildSeriesIndex(books);
+  assert.deepStrictEqual(groups.map((g) => g.letter), ['D', 'T']);
+  assert.deepStrictEqual(groups.find((g) => g.letter === 'D').series, [{ name: 'Dune', count: 1 }]);
+  assert.deepStrictEqual(groups.find((g) => g.letter === 'T').series, [{ name: 'The Culture', count: 2 }]);
+});
+
+test('booksBySeries: exact trimmed match, sorted by series number (numbered before unnumbered), then title', () => {
+  const books = [
+    { title: 'Children of Dune', series: 'Dune', seriesNumber: 3 },
+    { title: 'Dune', series: 'Dune', seriesNumber: 1 },
+    { title: 'Dune Messiah', series: 'Dune', seriesNumber: 2 },
+    { title: 'A Dune Companion', series: 'Dune', seriesNumber: null },
+    { title: 'Other Series Book', series: 'Foundation', seriesNumber: 1 },
+  ];
+  const result = logic.booksBySeries(books, 'Dune');
+  assert.deepStrictEqual(result.map((b) => b.title), ['Dune', 'Dune Messiah', 'Children of Dune', 'A Dune Companion']);
+});
+
 test('booksByAuthor: exact trimmed match, sorted by title', () => {
   const books = [
     { title: 'Zebra', author: 'Ann Leckie' },

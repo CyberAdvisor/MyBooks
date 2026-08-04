@@ -67,7 +67,7 @@ body {
 .nav-done { font-weight: 600; }
 .nav-title { font-size: 17px; font-weight: 600; }
 
-/* Segmented control (Status / Authors / Categories) */
+/* Segmented control (Status / Authors / Categories / Series) */
 .segmented {
   display: flex; background: var(--fill); border-radius: 9px; padding: 2px; margin-bottom: 8px;
 }
@@ -78,7 +78,7 @@ body {
 }
 .segment.active { background: var(--fill-raised); color: var(--label); box-shadow: 0 1px 2px rgba(0,0,0,0.4); }
 
-/* Authors/Categories index rows */
+/* Authors/Categories/Series index rows */
 .index-count { font-size: 13px; color: var(--tertiary-label); flex-shrink: 0; }
 
 /* Search bar */
@@ -195,6 +195,12 @@ body {
 .chip { font-size: 12px; background: var(--fill); color: var(--secondary-label); padding: 3px 9px; border-radius: 20px; }
 .chip.removable { display: flex; align-items: center; gap: 5px; background: var(--blue-tint); color: var(--blue); cursor: pointer; }
 .chip.add-chip { background: transparent; border: 1px dashed var(--tertiary-label); color: var(--secondary-label); cursor: pointer; }
+
+.source-add-wrap { position: relative; display: inline-block; }
+.source-menu { position: absolute; top: calc(100% + 6px); right: 0; background: var(--fill-raised); border-radius: 10px; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,0.5); z-index: 20; min-width: 130px; }
+.source-menu-item { padding: 10px 14px; font-size: 14px; color: var(--label); border-bottom: 0.5px solid var(--separator); cursor: pointer; white-space: nowrap; }
+.source-menu-item:last-child { border-bottom: none; }
+.source-menu-item:hover, .source-menu-item:active { background: var(--blue-tint); color: var(--blue); }
 
 .group-label { font-size: 13px; font-weight: 600; color: var(--secondary-label); text-transform: uppercase; letter-spacing: 0.4px; padding: 6px 16px 6px 30px; }
 .synopsis-box, .notes-box { padding: 12px 14px; font-size: 14px; line-height: 1.45; }

@@ -31,9 +31,9 @@ const state = {
   refreshMatches: [],       // last set of match candidates shown by "Refresh from Online Sources"
   editCoverValue: '',       // working copy of coverUrl while editing (may be a data: URI)
   searchQuery: '',
-  listMode: 'status',       // 'status' | 'authors' | 'categories' | 'drilldown'
-  drilldownType: null,      // 'author' | 'category', when listMode === 'drilldown'
-  drilldownValue: null,     // the specific author name or category name being viewed
+  listMode: 'status',       // 'status' | 'authors' | 'categories' | 'series' | 'drilldown'
+  drilldownType: null,      // 'author' | 'category' | 'series', when listMode === 'drilldown'
+  drilldownValue: null,     // the specific author/category/series name being viewed
 };
 
 function loadCollapsedSections() {
@@ -118,6 +118,7 @@ async function renderListView() {
 
   if (state.listMode === 'authors') return renderAuthorsMode(allBooks);
   if (state.listMode === 'categories') return renderCategoriesMode(allBooks);
+  if (state.listMode === 'series') return renderSeriesMode(allBooks);
   if (state.listMode === 'drilldown') return renderDrilldownMode(allBooks);
   return renderStatusMode(allBooks);
 }
@@ -213,10 +214,48 @@ function renderCategoriesMode(allBooks) {
   container.appendChild(card);
 }
 
+function renderSeriesMode(allBooks) {
+  const groups = logic.buildSeriesIndex(allBooks);
+  const container = document.getElementById('listContent');
+  container.innerHTML = '';
+
+  if (groups.length === 0) {
+    container.innerHTML = '<div class="empty-state">No books with a series set yet.</div>';
+    return;
+  }
+
+  groups.forEach(({ letter, series }) => {
+    const header = document.createElement('div');
+    header.className = 'section-label';
+    header.textContent = letter;
+    container.appendChild(header);
+
+    const card = document.createElement('div');
+    card.className = 'card';
+    series.forEach(({ name, count }) => {
+      card.appendChild(buildIndexRow(name, count, 'series'));
+    });
+    container.appendChild(card);
+  });
+}
+
+const DRILLDOWN_LOOKUPS = {
+  author: logic.booksByAuthor,
+  category: logic.booksByCategory,
+  series: logic.booksBySeries,
+};
+
+// Which segmented-control mode each drilldown type returns to via the
+// drilldown "‹ Back" button - not a simple pluralization (category ->
+// categories), so kept as an explicit map rather than derived from the string.
+const DRILLDOWN_PARENT_MODE = {
+  author: 'authors',
+  category: 'categories',
+  series: 'series',
+};
+
 function renderDrilldownMode(allBooks) {
-  const books = state.drilldownType === 'author'
-    ? logic.booksByAuthor(allBooks, state.drilldownValue)
-    : logic.booksByCategory(allBooks, state.drilldownValue);
+  const books = DRILLDOWN_LOOKUPS[state.drilldownType](allBooks, state.drilldownValue);
 
   const container = document.getElementById('listContent');
   container.innerHTML = '';
@@ -239,11 +278,11 @@ function openDrilldown(type, value) {
   renderListView();
 }
 
-/** A simple name/count row used by both Authors and Categories index views. */
+/** A simple name/count row used by the Authors, Categories, and Series index views. */
 function buildIndexRow(name, count, indexType) {
   const row = document.createElement('div');
   row.className = 'row';
-  row.dataset.indexType = indexType; // 'author' | 'category' - read by the delegated click handler
+  row.dataset.indexType = indexType; // 'author' | 'category' | 'series' - read by the delegated click handler
   row.dataset.indexValue = name;
   row.innerHTML = `
     <div class="row-text"><div class="row-title">${escapeHtml(name)}</div></div>
@@ -545,19 +584,72 @@ function renderSourceChips() {
     container.appendChild(chip);
   });
 
+  const remaining = SOURCE_OPTIONS.filter((s) => !state.editSourceList.includes(s));
+  if (remaining.length > 0) {
+    container.appendChild(buildSourceAddChip(remaining));
+  }
+}
+
+/**
+ * The "+ Add" chip and its inline dropdown of remaining SOURCE_OPTIONS.
+ * SOURCE_OPTIONS is a fixed list (unlike categoryList), so this only ever
+ * needs to offer a pick-from-list menu, never a "type a new one" path.
+ * Replaces a native prompt() dialog with a small popover positioned under
+ * the chip.
+ */
+function buildSourceAddChip(remaining) {
+  const wrap = document.createElement('span');
+  wrap.className = 'source-add-wrap';
+
   const addChip = document.createElement('span');
   addChip.className = 'chip add-chip';
   addChip.textContent = '＋ Add';
-  addChip.addEventListener('click', () => {
-    const remaining = SOURCE_OPTIONS.filter((s) => !state.editSourceList.includes(s));
-    if (remaining.length === 0) return;
-    const choice = prompt(`Add source (${remaining.join(', ')}):`, remaining[0]);
-    if (choice && remaining.includes(choice)) {
-      state.editSourceList.push(choice);
-      renderSourceChips();
+  addChip.addEventListener('click', (e) => {
+    e.stopPropagation(); // don't let this click immediately trigger the outside-click closer below
+    if (wrap.querySelector('.source-menu')) {
+      closeSourceMenu(wrap);
+    } else {
+      openSourceMenu(wrap, remaining);
     }
   });
-  container.appendChild(addChip);
+  wrap.appendChild(addChip);
+  return wrap;
+}
+
+function openSourceMenu(wrap, remaining) {
+  const menu = document.createElement('div');
+  menu.className = 'source-menu';
+  remaining.forEach((src) => {
+    const item = document.createElement('div');
+    item.className = 'source-menu-item';
+    item.textContent = src;
+    item.addEventListener('click', (e) => {
+      e.stopPropagation();
+      state.editSourceList.push(src);
+      closeSourceMenu(wrap); // detach the outside-click listener before the rebuild below removes this DOM
+      renderSourceChips();
+    });
+    menu.appendChild(item);
+  });
+  wrap.appendChild(menu);
+
+  // Closes the menu on the next click anywhere outside it. Deferred by a
+  // tick so the click that opened the menu doesn't immediately close it.
+  function outsideClickHandler(e) {
+    if (menu.contains(e.target)) return; // menu items handle their own clicks
+    closeSourceMenu(wrap);
+  }
+  setTimeout(() => document.addEventListener('click', outsideClickHandler), 0);
+  wrap._closeMenuListener = outsideClickHandler; // stashed so closeSourceMenu can remove it
+}
+
+function closeSourceMenu(wrap) {
+  const menu = wrap.querySelector('.source-menu');
+  if (menu) menu.remove();
+  if (wrap._closeMenuListener) {
+    document.removeEventListener('click', wrap._closeMenuListener);
+    wrap._closeMenuListener = null;
+  }
 }
 
 async function saveEdit() {
@@ -895,9 +987,24 @@ async function handleRestoreFile(event) {
     return;
   }
   await db.clearAllBooks();
+
+  // The backup file only carries the books array (see handleBackupNow) -
+  // there's no separate exported category list - so the category list is
+  // rebuilt from scratch here, the same way CSV import folds categories in
+  // (addCategoryIfNew per book). Restore already replaces all book data
+  // wholesale ("Restoring will replace all current book data..." above),
+  // so categories get the same treatment: reset first, then rebuilt purely
+  // from what's actually in the restored books, rather than merged with
+  // whatever was in the category list before the restore. Without the
+  // reset, a restore onto an empty/fresh browser would otherwise leave the
+  // Categories view populated only with "Uncategorized" - blank until a
+  // category was added by hand or via a later CSV import.
+  categoryList = [];
+  saveCategoryList(categoryList);
   for (const book of books) {
     const { id, ...rest } = book; // let IndexedDB assign fresh ids
     await db.addBook(Object.assign(db.emptyBook(), rest));
+    addCategoryIfNew(rest.category);
   }
   event.target.value = '';
   alert(`Restored ${books.length} book(s).`);
@@ -923,7 +1030,7 @@ function wireEvents() {
     renderListView();
   });
 
-  // Status / Authors / Categories segmented control
+  // Status / Authors / Categories / Series segmented control
   document.querySelectorAll('#librarySegmented .segment').forEach((seg) => {
     seg.addEventListener('click', () => {
       state.listMode = seg.dataset.mode;
@@ -931,15 +1038,15 @@ function wireEvents() {
     });
   });
 
-  // Drill-down back button: return to whichever index (authors/categories) led here
+  // Drill-down back button: return to whichever index (authors/categories/series) led here
   document.getElementById('libraryDrilldownBackBtn').addEventListener('click', () => {
-    state.listMode = state.drilldownType === 'author' ? 'authors' : 'categories';
+    state.listMode = DRILLDOWN_PARENT_MODE[state.drilldownType];
     state.drilldownType = null;
     state.drilldownValue = null;
     renderListView();
   });
 
-  // Delegated click handling for all list rows (book rows + Authors/Categories index rows).
+  // Delegated click handling for all list rows (book rows + Authors/Categories/Series index rows).
   // Attached once to the container, which is never replaced - only its children are
   // rebuilt on each render, so this avoids re-attaching (and any risk of losing) a
   // listener on every individual row every time the list re-renders.
