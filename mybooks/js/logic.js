@@ -4,12 +4,12 @@
  * Kept separate so they can be unit-tested directly under Node.
  */
 
-const STATUS_ORDER = ['Reading', 'To Read', 'Waiting', 'Read', 'Archive'];
+const STATUS_ORDER = ['Reading', 'To Read', 'Waiting', 'Read', 'Wanted', 'Shelved'];
 
 /**
  * The quick-action button shown on a book's row in the Status list view -
- * what it says and what status tapping it sets. Read and Archive don't get
- * one (nothing further to advance them to from the list view).
+ * what it says and what status tapping it sets. Read, Wanted, and Shelved
+ * don't get one (nothing further to advance them to from the list view).
  */
 const STATUS_QUICK_ACTIONS = {
   'Reading': { label: 'Mark Read', nextStatus: 'Read' },

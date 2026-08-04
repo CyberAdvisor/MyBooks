@@ -631,16 +631,18 @@ await test('Status list quick actions: "Read Now" (To Read) and "To Read" (Waiti
   assert.strictEqual((await window.db.getBook(readingId)).status, 'Read');
 });
 
-await test('Status list quick actions: Read and Archive rows show no action button', async () => {
+await test('Status list quick actions: Read, Wanted, and Shelved rows show no action button', async () => {
   const window = await createApp();
   const d = window.document;
   const readId = await window.db.addBook(Object.assign(window.db.emptyBook(), { title: 'A', author: 'X', status: 'Read' }));
-  const archiveId = await window.db.addBook(Object.assign(window.db.emptyBook(), { title: 'B', author: 'Y', status: 'Archive' }));
+  const wantedId = await window.db.addBook(Object.assign(window.db.emptyBook(), { title: 'B', author: 'Y', status: 'Wanted' }));
+  const shelvedId = await window.db.addBook(Object.assign(window.db.emptyBook(), { title: 'C', author: 'Z', status: 'Shelved' }));
   await window.renderListView();
 
   const rowFor = (id) => d.querySelector(`.row[data-book-id="${id}"]`);
   assert.strictEqual(rowFor(readId).querySelector('.row-action-btn'), null);
-  assert.strictEqual(rowFor(archiveId).querySelector('.row-action-btn'), null);
+  assert.strictEqual(rowFor(wantedId).querySelector('.row-action-btn'), null);
+  assert.strictEqual(rowFor(shelvedId).querySelector('.row-action-btn'), null);
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

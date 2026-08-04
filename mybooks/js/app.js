@@ -14,7 +14,7 @@ const LIBRARY_NAME = 'Library';
 
 const COLLAPSE_STATE_KEY = 'book_library_collapsed_sections';
 const RATING_OPTIONS = [1, 2, 3, 4, 5];
-const STATUS_OPTIONS = logic.STATUS_ORDER; // Reading, To Read, Waiting, Read, Archive
+const STATUS_OPTIONS = logic.STATUS_ORDER; // Reading, To Read, Waiting, Read, Wanted, Shelved
 const CATEGORY_STORAGE_KEY = 'book_library_categories';
 // Sentinel option value for "+ Add new category..." in the Edit screen's
 // category <select> - never a real category name, so it can't collide.
@@ -281,7 +281,7 @@ function buildBookRow(book) {
   `;
   row.appendChild(text);
 
-  // Rating stars whenever the book has one (Read/Archive books normally)
+  // Rating stars whenever the book has one (Read/Shelved books normally)
   if (book.rating) {
     const starsWrap = document.createElement('span');
     starsWrap.className = 'row-rating';

@@ -55,7 +55,7 @@ test('groupBooksByStatus: includes every status even with zero books, sorted alp
   assert.deepStrictEqual(grouped.map((g) => g.status), logic.STATUS_ORDER);
   const reading = grouped.find((g) => g.status === 'Reading');
   assert.deepStrictEqual(reading.books.map((b) => b.title), ['Apple', 'Zebra']);
-  assert.strictEqual(grouped.find((g) => g.status === 'Archive').books.length, 0);
+  assert.strictEqual(grouped.find((g) => g.status === 'Shelved').books.length, 0);
 });
 
 test('groupBooksByStatus: an unrecognized status falls back to "To Read"', () => {
@@ -118,10 +118,15 @@ test('getStatusQuickAction: Reading advances to Read, To Read advances to Readin
   assert.deepStrictEqual(logic.getStatusQuickAction('Waiting'), { label: 'To Read', nextStatus: 'To Read' });
 });
 
-test('getStatusQuickAction: Read, Archive, and unrecognized statuses get no quick action', () => {
+test('getStatusQuickAction: Read, Wanted, Shelved, and unrecognized statuses get no quick action', () => {
   assert.strictEqual(logic.getStatusQuickAction('Read'), null);
-  assert.strictEqual(logic.getStatusQuickAction('Archive'), null);
+  assert.strictEqual(logic.getStatusQuickAction('Wanted'), null);
+  assert.strictEqual(logic.getStatusQuickAction('Shelved'), null);
   assert.strictEqual(logic.getStatusQuickAction('Not A Real Status'), null);
+});
+
+test('STATUS_ORDER: Wanted sits directly above Shelved, at the end of the list', () => {
+  assert.deepStrictEqual(logic.STATUS_ORDER, ['Reading', 'To Read', 'Waiting', 'Read', 'Wanted', 'Shelved']);
 });
 
 // ---------- csv.js ----------
