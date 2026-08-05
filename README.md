@@ -61,7 +61,7 @@ Recommended over opening `index.html` directly as a downloaded file - iOS Safari
 
 ### Or use an already-hosted copy
 
-A shared instance is planned at **<https://mybooks.fyi>** (the app itself lives at `mybooks.fyi/mybooks/` - the root domain shows a short landing page first) for anyone who'd rather skip hosting it themselves. Your library is still private and local to your own device even using a shared instance - the app has no backend and no database of its own. Every request it makes (aside from the Open Library lookups) stays in your browser's IndexedDB, regardless of which server happens to be serving the static files. The same storage-eviction caveat above still applies either way, since that's about your browser's storage, not about who's hosting the page.
+A shared instance is available at **<https://mybooks.fyi>** (the app itself lives at `mybooks.fyi/mybooks/` - the root domain shows a short landing page first) for anyone who'd rather skip hosting it themselves. Your library is still private and local to your own device even using a shared instance - the app has no backend and no database of its own. Every request it makes (aside from the Open Library lookups) stays in your browser's IndexedDB, regardless of which server happens to be serving the static files. The same storage-eviction caveat above still applies either way, since that's about your browser's storage, not about who's hosting the page.
 
 ## Customizing this with Claude
 
@@ -86,7 +86,7 @@ This app was built with [Claude](https://claude.ai). To make changes (add a feat
 - No login, no cloud sync, no cross-device support
 - No notifications - you have to open the app to see what's new
 - Relies entirely on Open Library data for in-app search - if a book isn't in their database, their data has gaps (missing synopsis, wrong cover, etc.), or their service is temporarily down or overloaded, that carries through to the app. A failed search shows a clear "couldn't reach Open Library" message rather than looking like a broken/empty result, but there's no fallback source - you can still add a book manually via "Add Without a Match" while it's down.
-- A cover can be replaced but not cleared once one is set, in this version
+- A cover can be replaced but not cleared once one is set
 
 ## Filling in covers after a CSV import
 

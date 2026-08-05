@@ -44,8 +44,9 @@ function filterBooks(books, query) {
 
 /**
  * Groups books by Status into the fixed display order, each group's books
- * sorted alphabetically by title. Statuses with zero books are still
- * included (as empty arrays) so the UI can render a "0" count section.
+ * sorted by rating descending (unrated books last), then by title
+ * alphabetically within the same rating. Statuses with zero books are
+ * still included (as empty arrays) so the UI can render a "0" count section.
  */
 function groupBooksByStatus(books) {
   const groups = {};
@@ -57,7 +58,12 @@ function groupBooksByStatus(books) {
   });
 
   STATUS_ORDER.forEach((status) => {
-    groups[status].sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+    groups[status].sort((a, b) => {
+      const ar = a.rating || 0;
+      const br = b.rating || 0;
+      if (ar !== br) return br - ar;
+      return (a.title || '').localeCompare(b.title || '');
+    });
   });
 
   return STATUS_ORDER.map((status) => ({ status, books: groups[status] }));

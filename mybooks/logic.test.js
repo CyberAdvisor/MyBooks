@@ -49,15 +49,18 @@ test('filterBooks: matches title, author, category, source, synopsis, or notes, 
   assert.strictEqual(logic.filterBooks(books, 'nonexistent').length, 0);
 });
 
-test('groupBooksByStatus: includes every status even with zero books, sorted alphabetically within each', () => {
+test('groupBooksByStatus: includes every status even with zero books, sorted by rating descending then title', () => {
   const books = [
-    { title: 'Zebra', status: 'Reading' },
-    { title: 'Apple', status: 'Reading' },
+    { title: 'Zebra', status: 'Reading', rating: 3 },
+    { title: 'Apple', status: 'Reading', rating: 5 },
+    { title: 'Mango', status: 'Reading', rating: 3 },
+    { title: 'Kiwi', status: 'Reading', rating: null },
   ];
   const grouped = logic.groupBooksByStatus(books);
   assert.deepStrictEqual(grouped.map((g) => g.status), logic.STATUS_ORDER);
   const reading = grouped.find((g) => g.status === 'Reading');
-  assert.deepStrictEqual(reading.books.map((b) => b.title), ['Apple', 'Zebra']);
+  // Apple (5) first, then Mango/Zebra tied at 3 (alphabetical), unrated Kiwi last.
+  assert.deepStrictEqual(reading.books.map((b) => b.title), ['Apple', 'Mango', 'Zebra', 'Kiwi']);
   assert.strictEqual(grouped.find((g) => g.status === 'Shelved').books.length, 0);
 });
 
