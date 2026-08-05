@@ -405,9 +405,9 @@ async function renderDetailView() {
   document.getElementById('detailFields').innerHTML = `
     <div class="field-row"><span class="field-label">Series</span><span class="field-value">${book.series ? escapeHtml(book.series) + (book.seriesNumber ? ' #' + escapeHtml(String(book.seriesNumber)) : '') : '—'}</span></div>
     <div class="field-row"><span class="field-label">Category</span><span class="field-value">${book.category ? escapeHtml(book.category) : '—'}</span></div>
-    <div class="field-row"><span class="field-label">Source</span><span class="field-value multi">${sourceChips}</span></div>
     <div class="field-row"><span class="field-label">Status</span><span class="field-value">${escapeHtml(book.status)}</span></div>
     <div class="field-row"><span class="field-label">Rating</span><span class="field-value">${book.rating ? rating.buildStarsHtml(book.rating) : '—'}</span></div>
+    <div class="field-row"><span class="field-label">Source</span><span class="field-value multi">${sourceChips}</span></div>
   `;
 
   document.getElementById('detailSynopsis').textContent = book.synopsis || 'No synopsis.';
@@ -613,17 +613,26 @@ function buildSourceAddChip(remaining) {
   addChip.textContent = '＋ Add';
   addChip.addEventListener('click', (e) => {
     e.stopPropagation(); // don't let this click immediately trigger the outside-click closer below
-    if (wrap.querySelector('.source-menu')) {
+    if (wrap._menu) {
       closeSourceMenu(wrap);
     } else {
-      openSourceMenu(wrap, remaining);
+      openSourceMenu(wrap, addChip, remaining);
     }
   });
   wrap.appendChild(addChip);
   return wrap;
 }
 
-function openSourceMenu(wrap, remaining) {
+/**
+ * Opens the source-picker popover, appended to <body> and positioned with
+ * `position: fixed` from the "+ Add" chip's live bounding rect - NOT
+ * nested inside the chip's own .field-group. .field-group has
+ * `overflow: hidden` (it's what rounds its corners), which would silently
+ * clip an absolutely-positioned popover to invisibility - the menu was
+ * genuinely opening, just cropped to nothing, which is why "+ Add" looked
+ * like it did nothing at all rather than looking broken.
+ */
+function openSourceMenu(wrap, anchorEl, remaining) {
   const menu = document.createElement('div');
   menu.className = 'source-menu';
   remaining.forEach((src) => {
@@ -633,12 +642,16 @@ function openSourceMenu(wrap, remaining) {
     item.addEventListener('click', (e) => {
       e.stopPropagation();
       state.editSourceList.push(src);
-      closeSourceMenu(wrap); // detach the outside-click listener before the rebuild below removes this DOM
+      closeSourceMenu(wrap); // detach the outside-click listener before the rebuild below removes editSourceChips' contents
       renderSourceChips();
     });
     menu.appendChild(item);
   });
-  wrap.appendChild(menu);
+  document.body.appendChild(menu);
+
+  const rect = anchorEl.getBoundingClientRect();
+  menu.style.top = `${rect.bottom + 6}px`;
+  menu.style.right = `${document.documentElement.clientWidth - rect.right}px`;
 
   // Closes the menu on the next click anywhere outside it. Deferred by a
   // tick so the click that opened the menu doesn't immediately close it.
@@ -647,12 +660,16 @@ function openSourceMenu(wrap, remaining) {
     closeSourceMenu(wrap);
   }
   setTimeout(() => document.addEventListener('click', outsideClickHandler), 0);
-  wrap._closeMenuListener = outsideClickHandler; // stashed so closeSourceMenu can remove it
+
+  wrap._menu = menu; // stashed (on the wrap, not the now-detached-from-it menu) so closeSourceMenu can find and remove it
+  wrap._closeMenuListener = outsideClickHandler;
 }
 
 function closeSourceMenu(wrap) {
-  const menu = wrap.querySelector('.source-menu');
-  if (menu) menu.remove();
+  if (wrap._menu) {
+    wrap._menu.remove();
+    wrap._menu = null;
+  }
   if (wrap._closeMenuListener) {
     document.removeEventListener('click', wrap._closeMenuListener);
     wrap._closeMenuListener = null;

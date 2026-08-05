@@ -196,8 +196,12 @@ body {
 .chip.removable { display: flex; align-items: center; gap: 5px; background: var(--blue-tint); color: var(--blue); cursor: pointer; }
 .chip.add-chip { background: transparent; border: 1px dashed var(--tertiary-label); color: var(--secondary-label); cursor: pointer; }
 
-.source-add-wrap { position: relative; display: inline-block; }
-.source-menu { position: absolute; top: calc(100% + 6px); right: 0; background: var(--fill-raised); border-radius: 10px; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,0.5); z-index: 20; min-width: 130px; }
+.source-add-wrap { display: inline-block; }
+/* Appended to <body> and positioned via JS (top/right set inline from the
+   "+ Add" chip's bounding rect) rather than absolutely inside .field-group -
+   .field-group's overflow:hidden (its rounded corners) would otherwise clip
+   this right off the screen. */
+.source-menu { position: fixed; background: var(--fill-raised); border-radius: 10px; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,0.5); z-index: 30; min-width: 130px; }
 .source-menu-item { padding: 10px 14px; font-size: 14px; color: var(--label); border-bottom: 0.5px solid var(--separator); cursor: pointer; white-space: nowrap; }
 .source-menu-item:last-child { border-bottom: none; }
 .source-menu-item:hover, .source-menu-item:active { background: var(--blue-tint); color: var(--blue); }

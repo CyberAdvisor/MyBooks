@@ -280,18 +280,21 @@ await test('Source "+ Add" opens an inline menu of remaining options; picking on
   const chips = d.getElementById('editSourceChips');
   const addChip = chips.querySelector('.chip.add-chip');
   assert.ok(addChip, '"+ Add" chip should be present while any SOURCE_OPTIONS remain unpicked');
-  assert.strictEqual(chips.querySelector('.source-menu'), null, 'menu should not be open yet');
+  assert.strictEqual(d.body.querySelector('.source-menu'), null, 'menu should not be open yet');
 
   addChip.dispatchEvent(new window.Event('click', { bubbles: true }));
   await wait();
-  const menu = chips.querySelector('.source-menu');
+  // The menu is appended to <body>, not nested inside .editSourceChips/.field-group -
+  // .field-group clips overflow (its rounded corners), which would otherwise crop an
+  // absolutely-positioned popover to invisibility. See openSourceMenu() in app.js.
+  const menu = d.body.querySelector('.source-menu');
   assert.ok(menu, 'clicking + Add should open the inline menu');
   const items = Array.from(menu.querySelectorAll('.source-menu-item')).map((i) => i.textContent);
   assert.deepStrictEqual(items, ['Library', 'Kobo', 'Personal'], 'menu should list exactly the sources not already picked, in SOURCE_OPTIONS order');
 
   menu.querySelector('.source-menu-item').dispatchEvent(new window.Event('click', { bubbles: true }));
   await wait();
-  assert.strictEqual(chips.querySelector('.source-menu'), null, 'menu should close itself after a pick');
+  assert.strictEqual(d.body.querySelector('.source-menu'), null, 'menu should close itself after a pick');
   assert.ok(Array.from(chips.querySelectorAll('.chip.removable')).some((c) => c.textContent.includes('Library')), 'Library should now show as a removable chip');
 
   d.getElementById('editDoneBtn').click();
@@ -308,11 +311,11 @@ await test('Source menu closes without adding anything when clicking outside it'
 
   d.getElementById('editSourceChips').querySelector('.chip.add-chip').dispatchEvent(new window.Event('click', { bubbles: true }));
   await wait();
-  assert.ok(d.getElementById('editSourceChips').querySelector('.source-menu'), 'menu should be open');
+  assert.ok(d.body.querySelector('.source-menu'), 'menu should be open');
 
   d.body.dispatchEvent(new window.Event('click', { bubbles: true }));
   await wait();
-  assert.strictEqual(d.getElementById('editSourceChips').querySelector('.source-menu'), null, 'clicking outside the menu should close it');
+  assert.strictEqual(d.body.querySelector('.source-menu'), null, 'clicking outside the menu should close it');
 
   d.getElementById('editDoneBtn').click();
   await wait();
@@ -342,6 +345,15 @@ await test('Cancel discards unsaved edits', async () => {
 });
 
 // ---------- Detail actions: mark read, delete ----------
+
+await test('Detail view field order matches Edit view: Series, Category, Status, Rating, then Source', async () => {
+  const window = await createApp();
+  const d = window.document;
+  const id = await window.db.addBook(Object.assign(window.db.emptyBook(), { title: 'T', author: 'A', source: ['Kindle'] }));
+  await window.openDetail(id);
+  const labels = Array.from(d.querySelectorAll('#detailFields .field-label')).map((el) => el.textContent);
+  assert.deepStrictEqual(labels, ['Series', 'Category', 'Status', 'Rating', 'Source'], 'Source should come last, after Rating, matching the Edit screen\'s Details group + separate Source group order');
+});
 
 await test('Mark as Read updates status and re-renders the detail view', async () => {
   const window = await createApp();
