@@ -12,6 +12,14 @@
 // (e.g. "John's Library"). Leave as 'Library' for the default.
 const LIBRARY_NAME = 'Library';
 
+// App version, shown small and light next to the Library title. Bump this
+// on every release and add a line below describing what changed - this is
+// the running changelog for the whole app.
+//
+//   v1.0 - Status list now sorts by rating (highest first) before falling
+//          back to title, instead of by title alone.
+const APP_VERSION = 'v1.0';
+
 const COLLAPSE_STATE_KEY = 'book_library_collapsed_sections';
 const RATING_OPTIONS = [1, 2, 3, 4, 5];
 const STATUS_OPTIONS = logic.STATUS_ORDER; // Reading, To Read, Waiting, Read, Wanted, Shelved
@@ -1115,6 +1123,7 @@ async function init() {
   appInitialized = true;
 
   document.getElementById('libraryTitle').textContent = LIBRARY_NAME;
+  document.getElementById('libraryVersion').textContent = APP_VERSION;
   wireEvents();
   try {
     await migrateLegacyArraySource();

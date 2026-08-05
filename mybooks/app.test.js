@@ -62,6 +62,15 @@ async function test(label, fn) {
 const wait = (ms = 10) => new Promise((r) => setTimeout(r, ms));
 
 async function main() {
+// ---------- Startup ----------
+
+await test('Library title shows the app version, small and next to the heading', async () => {
+  const window = await createApp();
+  const d = window.document;
+  assert.strictEqual(d.getElementById('libraryTitle').textContent, 'Library');
+  assert.match(d.getElementById('libraryVersion').textContent, /^v\d/);
+});
+
 // ---------- Add Book: search -> preview -> add/cancel ----------
 
 await test('search renders match candidates and clicking one opens a read-only preview (nothing saved yet)', async () => {
