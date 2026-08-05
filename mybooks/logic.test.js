@@ -35,14 +35,17 @@ test('filterBooks: empty query returns everything unchanged', () => {
   assert.deepStrictEqual(logic.filterBooks(books, '   '), books);
 });
 
-test('filterBooks: matches title, author, or category, case-insensitively', () => {
+test('filterBooks: matches title, author, category, source, synopsis, or notes, case-insensitively', () => {
   const books = [
-    { title: 'Dune', author: 'Frank Herbert', category: 'Science Fiction' },
-    { title: 'Emma', author: 'Jane Austen', category: 'Fiction' },
+    { title: 'Dune', author: 'Frank Herbert', category: 'Science Fiction', source: 'Kindle', synopsis: 'A desert planet epic.', notes: 'Reread often.' },
+    { title: 'Emma', author: 'Jane Austen', category: 'Fiction', source: 'Library', synopsis: 'A meddling matchmaker.', notes: 'Loaned to a friend.' },
   ];
   assert.strictEqual(logic.filterBooks(books, 'dune').length, 1);
   assert.strictEqual(logic.filterBooks(books, 'AUSTEN').length, 1);
   assert.strictEqual(logic.filterBooks(books, 'fiction').length, 2); // substring match on both categories
+  assert.strictEqual(logic.filterBooks(books, 'kindle').length, 1);
+  assert.strictEqual(logic.filterBooks(books, 'matchmaker').length, 1);
+  assert.strictEqual(logic.filterBooks(books, 'loaned').length, 1);
   assert.strictEqual(logic.filterBooks(books, 'nonexistent').length, 0);
 });
 
@@ -167,28 +170,28 @@ test('STATUS_ORDER: Wanted sits directly above Shelved, at the end of the list',
 
 // ---------- csv.js ----------
 
-test('csv: round-trips a book through booksToCsv -> csvToBooks', () => {
+test('csv: round-trips a book through booksToCsv -> csvToBooks, source single-value, legacy semicolon cells keep just the first', () => {
   const original = [{
     title: 'Dune', author: 'Frank Herbert', status: 'Read',
     synopsis: 'A desert, a prophecy, and House Atreides.',
-    source: ['Kindle', 'Personal'], category: 'Science Fiction',
+    source: 'Kindle', category: 'Science Fiction',
     series: 'Dune', seriesNumber: 1, rating: 5, notes: 'Reread often.',
   }];
   const roundTripped = csv.csvToBooks(csv.booksToCsv(original));
-  assert.strictEqual(roundTripped.length, 1);
-  assert.strictEqual(roundTripped[0].title, 'Dune');
-  assert.deepStrictEqual(roundTripped[0].source, ['Kindle', 'Personal']);
+  assert.strictEqual(roundTripped[0].source, 'Kindle');
   assert.strictEqual(roundTripped[0].seriesNumber, 1);
   assert.strictEqual(roundTripped[0].rating, 5);
+
+  const [legacy] = csv.csvToBooks('title,author,source\nEmma,Jane Austen,Kindle;Personal');
+  assert.strictEqual(legacy.source, 'Kindle');
 });
 
-test('csv: fields with commas, quotes, and semicolons in source are handled', () => {
+test('csv: fields with commas and quotes are handled', () => {
   const original = [{
     title: 'Thinking, Fast and Slow', author: 'Daniel "The Nobel Laureate" Kahneman',
-    status: 'To Read', synopsis: '', source: ['Library'], category: '', series: '', seriesNumber: null, rating: null, notes: '',
+    status: 'To Read', synopsis: '', source: 'Library', category: '', series: '', seriesNumber: null, rating: null, notes: '',
   }];
-  const csvText = csv.booksToCsv(original);
-  const roundTripped = csv.csvToBooks(csvText);
+  const roundTripped = csv.csvToBooks(csv.booksToCsv(original));
   assert.strictEqual(roundTripped[0].title, 'Thinking, Fast and Slow');
   assert.strictEqual(roundTripped[0].author, 'Daniel "The Nobel Laureate" Kahneman');
 });
@@ -196,7 +199,7 @@ test('csv: fields with commas, quotes, and semicolons in source are handled', ()
 test('csv: missing optional columns default sensibly', () => {
   const [book] = csv.csvToBooks('title,author\nEmma,Jane Austen');
   assert.strictEqual(book.status, 'To Read');
-  assert.deepStrictEqual(book.source, []);
+  assert.strictEqual(book.source, '');
   assert.strictEqual(book.seriesNumber, null);
   assert.strictEqual(book.rating, null);
 });

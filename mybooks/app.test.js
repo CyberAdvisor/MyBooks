@@ -205,6 +205,7 @@ await test('editing and saving persists every field, including a pasted cover im
   d.getElementById('editCategory').value = 'Fantasy';
   d.getElementById('editStatus').value = 'Reading';
   d.getElementById('editRating').value = '4';
+  d.getElementById('editSource').value = 'Kobo';
   d.getElementById('editSynopsis').value = 'A synopsis.';
   d.getElementById('editNotes').value = 'Some notes.';
 
@@ -225,6 +226,7 @@ await test('editing and saving persists every field, including a pasted cover im
   assert.strictEqual(saved.category, 'Fantasy');
   assert.strictEqual(saved.status, 'Reading');
   assert.strictEqual(saved.rating, 4);
+  assert.strictEqual(saved.source, 'Kobo');
   assert.strictEqual(saved.synopsis, 'A synopsis.');
   assert.strictEqual(saved.notes, 'Some notes.');
   assert.strictEqual(saved.coverUrl, 'data:image/jpeg;base64,FAKE1');
@@ -268,67 +270,36 @@ await test('pasting non-image clipboard content is a no-op', async () => {
   assert.ok(d.getElementById('editCover').classList.contains('no-cover'));
 });
 
-// ---------- Source picker: inline dropdown, not a native prompt() ----------
+// ---------- Source: single-select dropdown, same mechanism as Category ----------
 
-await test('Source "+ Add" opens an inline menu of remaining options; picking one adds it and closes the menu', async () => {
-  const window = await createApp();
-  const d = window.document;
-  const id = await window.db.addBook(Object.assign(window.db.emptyBook(), { title: 'T', author: 'A', source: ['Kindle'] }));
-  await window.openDetail(id);
-  await window.enterEditMode();
-
-  const chips = d.getElementById('editSourceChips');
-  const addChip = chips.querySelector('.chip.add-chip');
-  assert.ok(addChip, '"+ Add" chip should be present while any SOURCE_OPTIONS remain unpicked');
-  assert.strictEqual(d.body.querySelector('.source-menu'), null, 'menu should not be open yet');
-
-  addChip.dispatchEvent(new window.Event('click', { bubbles: true }));
-  await wait();
-  // The menu is appended to <body>, not nested inside .editSourceChips/.field-group -
-  // .field-group clips overflow (its rounded corners), which would otherwise crop an
-  // absolutely-positioned popover to invisibility. See openSourceMenu() in app.js.
-  const menu = d.body.querySelector('.source-menu');
-  assert.ok(menu, 'clicking + Add should open the inline menu');
-  const items = Array.from(menu.querySelectorAll('.source-menu-item')).map((i) => i.textContent);
-  assert.deepStrictEqual(items, ['Library', 'Kobo', 'Personal'], 'menu should list exactly the sources not already picked, in SOURCE_OPTIONS order');
-
-  menu.querySelector('.source-menu-item').dispatchEvent(new window.Event('click', { bubbles: true }));
-  await wait();
-  assert.strictEqual(d.body.querySelector('.source-menu'), null, 'menu should close itself after a pick');
-  assert.ok(Array.from(chips.querySelectorAll('.chip.removable')).some((c) => c.textContent.includes('Library')), 'Library should now show as a removable chip');
-
-  d.getElementById('editDoneBtn').click();
-  await wait();
-  assert.deepStrictEqual((await window.db.getBook(id)).source, ['Kindle', 'Library']);
-});
-
-await test('Source menu closes without adding anything when clicking outside it', async () => {
+await test('Source dropdown: seeded options plus "+ Add new source...", selecting one persists it, and the sentinel adds+selects a new value', async () => {
   const window = await createApp();
   const d = window.document;
   const id = await window.db.addBook(Object.assign(window.db.emptyBook(), { title: 'T', author: 'A' }));
   await window.openDetail(id);
   await window.enterEditMode();
 
-  d.getElementById('editSourceChips').querySelector('.chip.add-chip').dispatchEvent(new window.Event('click', { bubbles: true }));
-  await wait();
-  assert.ok(d.body.querySelector('.source-menu'), 'menu should be open');
+  const options = Array.from(d.getElementById('editSource').options).map((o) => o.textContent);
+  assert.deepStrictEqual(options, ['—', 'Kindle', 'Kobo', 'Library', 'Yomu', '+ Add new source…'], 'seeded list, alphabetical, blank first and sentinel last');
 
-  d.body.dispatchEvent(new window.Event('click', { bubbles: true }));
-  await wait();
-  assert.strictEqual(d.body.querySelector('.source-menu'), null, 'clicking outside the menu should close it');
-
+  d.getElementById('editSource').value = 'Kobo';
   d.getElementById('editDoneBtn').click();
   await wait();
-  assert.deepStrictEqual((await window.db.getBook(id)).source, [], 'nothing should have been added');
+  assert.strictEqual((await window.db.getBook(id)).source, 'Kobo');
+
+  await window.enterEditMode();
+  window.prompt = () => 'Audible';
+  d.getElementById('editSource').value = '__add_new_source__';
+  d.getElementById('editSource').dispatchEvent(new window.Event('change', { bubbles: true }));
+  assert.strictEqual(d.getElementById('editSource').value, 'Audible', 'sentinel should add the new source and select it immediately');
+  assert.deepStrictEqual(Array.from(window.getSourceList()), ['Audible', 'Kindle', 'Kobo', 'Library', 'Yomu']);
 });
 
-await test('Source "+ Add" chip disappears once every option has been picked', async () => {
+await test('migrateLegacyArraySource converts an old array-shaped source to just its first entry', async () => {
   const window = await createApp();
-  const d = window.document;
-  const id = await window.db.addBook(Object.assign(window.db.emptyBook(), { title: 'T', author: 'A', source: ['Library', 'Kobo', 'Kindle', 'Personal'] }));
-  await window.openDetail(id);
-  await window.enterEditMode();
-  assert.strictEqual(d.getElementById('editSourceChips').querySelector('.chip.add-chip'), null, 'no options left to add, so the chip itself should be omitted');
+  const id = await window.db.addBook(Object.assign(window.db.emptyBook(), { title: 'T', author: 'A', source: ['Kindle', 'Personal'] }));
+  await window.migrateLegacyArraySource();
+  assert.strictEqual((await window.db.getBook(id)).source, 'Kindle');
 });
 
 await test('Cancel discards unsaved edits', async () => {
@@ -349,7 +320,7 @@ await test('Cancel discards unsaved edits', async () => {
 await test('Detail view field order matches Edit view: Series, Category, Status, Rating, then Source', async () => {
   const window = await createApp();
   const d = window.document;
-  const id = await window.db.addBook(Object.assign(window.db.emptyBook(), { title: 'T', author: 'A', source: ['Kindle'] }));
+  const id = await window.db.addBook(Object.assign(window.db.emptyBook(), { title: 'T', author: 'A', source: 'Kindle' }));
   await window.openDetail(id);
   const labels = Array.from(d.querySelectorAll('#detailFields .field-label')).map((el) => el.textContent);
   assert.deepStrictEqual(labels, ['Series', 'Category', 'Status', 'Rating', 'Source'], 'Source should come last, after Rating, matching the Edit screen\'s Details group + separate Source group order');
@@ -398,14 +369,14 @@ await test('search filters the Status list live as you type', async () => {
 await test('Book list rows show source as a 4th line only when the book has one', async () => {
   const window = await createApp();
   const d = window.document;
-  const withSourceId = await window.db.addBook(Object.assign(window.db.emptyBook(), { title: 'Dune', author: 'Frank Herbert', source: ['Kindle', 'Personal'] }));
-  const withoutSourceId = await window.db.addBook(Object.assign(window.db.emptyBook(), { title: 'Emma', author: 'Jane Austen' }));
+  const withSourceId = await window.db.addBook(Object.assign(window.db.emptyBook(), { title: 'Dune', author: 'Frank Herbert', source: 'Kindle' }));
+  const withoutSourceId = await window.db.addBook(Object.assign(window.db.emptyBook(), { title: 'Emma', author: 'Jane Austen', source: '' }));
   await window.renderListView();
 
   const rowFor = (id) => d.querySelector(`.row[data-book-id="${id}"]`);
   const sourceLine = rowFor(withSourceId).querySelector('.row-source');
   assert.ok(sourceLine, 'row should have a .row-source line when the book has a source');
-  assert.strictEqual(sourceLine.textContent, 'Kindle, Personal');
+  assert.strictEqual(sourceLine.textContent, 'Kindle');
 
   assert.strictEqual(rowFor(withoutSourceId).querySelector('.row-source'), null, 'no .row-source element at all when the book has no source');
 });
@@ -475,16 +446,17 @@ await test('CSV import adds new books and skips duplicate title+author pairs', a
 
 // ---------- Category list: starts empty, grows from import and from editing ----------
 
-await test('categories start empty, and CSV import folds new category values into the list', async () => {
+await test('categories start empty (sources start seeded), and CSV import folds new values of both into their lists', async () => {
   const window = await createApp();
   assert.deepStrictEqual(Array.from(window.getCategoryList()), [], 'category list should start empty');
 
-  const csvText = "title,author,category\nDune,Frank Herbert,Science Fiction\nEmma,Jane Austen,Fiction\nUntitled,Nobody,";
+  const csvText = "title,author,category,source\nDune,Frank Herbert,Science Fiction,Audible\nEmma,Jane Austen,Fiction,\nUntitled,Nobody,,";
   const fakeFile = { text: async () => csvText };
   await window.handleCsvImport({ target: { files: [fakeFile], value: 'x' } });
   await wait();
 
   assert.deepStrictEqual(Array.from(window.getCategoryList()), ['Fiction', 'Science Fiction'], 'both non-blank categories added, alphabetically, blank ignored');
+  assert.ok(Array.from(window.getSourceList()).includes('Audible'), 'a new source value from the CSV should fold into sourceList the same way category does');
 });
 
 await test('CSV import reuses an existing category case-insensitively instead of adding a duplicate', async () => {
@@ -596,14 +568,14 @@ await test('Restore replaces the entire library with the contents of the backup 
   assert.strictEqual(books[0].title, 'From Backup');
 });
 
-await test('Restore rebuilds the category list from the backup, replacing whatever was there before', async () => {
+await test('Restore rebuilds both the category list and the source list from the backup, replacing whatever was there before', async () => {
   const window = await createApp();
   window.addCategoryIfNew('Old Category'); // present before the restore - should not survive it
 
   const backupBooks = [
-    Object.assign(window.db.emptyBook(), { id: 1, title: 'A', author: 'X', category: 'Science Fiction' }),
-    Object.assign(window.db.emptyBook(), { id: 2, title: 'B', author: 'Y', category: 'Fiction' }),
-    Object.assign(window.db.emptyBook(), { id: 3, title: 'C', author: 'Z', category: '' }), // blank - should not add an entry
+    Object.assign(window.db.emptyBook(), { id: 1, title: 'A', author: 'X', category: 'Science Fiction', source: 'Audible' }),
+    Object.assign(window.db.emptyBook(), { id: 2, title: 'B', author: 'Y', category: 'Fiction', source: 'Kindle' }),
+    Object.assign(window.db.emptyBook(), { id: 3, title: 'C', author: 'Z', category: '', source: '' }), // blank - should not add an entry
   ];
   window.confirm = () => true;
   window.alert = () => {};
@@ -616,6 +588,7 @@ await test('Restore rebuilds the category list from the backup, replacing whatev
     ['Fiction', 'Science Fiction'],
     'category list should be rebuilt purely from the restored books - alphabetical, blanks skipped, old categories gone'
   );
+  assert.ok(Array.from(window.getSourceList()).includes('Audible'), 'source list should be rebuilt from the restored books the same way');
 });
 
 await test('Restore onto a category list that already matches leaves it alphabetically deduped, not doubled', async () => {

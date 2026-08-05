@@ -48,7 +48,7 @@ function emptyBook() {
     author: '',
     status: 'To Read',
     synopsis: '',
-    source: [],       // array of strings, e.g. ['Kindle', 'Paperback']
+    source: 'Kindle', // single value, one of sourceList (app.js) - not where the data came from, where the book itself lives
     category: '',
     series: '',
     seriesNumber: null,

@@ -19,12 +19,18 @@ const CATEGORY_STORAGE_KEY = 'book_library_categories';
 // Sentinel option value for "+ Add new category..." in the Edit screen's
 // category <select> - never a real category name, so it can't collide.
 const ADD_NEW_CATEGORY_VALUE = '__add_new_category__';
-const SOURCE_OPTIONS = ['Library', 'Kobo', 'Kindle', 'Personal'];
+
+const SOURCE_STORAGE_KEY = 'book_library_sources';
+// Sentinel option value for "+ Add new source..." - same pattern as categories.
+const ADD_NEW_SOURCE_VALUE = '__add_new_source__';
+// First-run seed for sourceList (below) - only used the very first time the
+// app runs on a browser with nothing in localStorage yet. After that,
+// sourceList is whatever's actually been persisted (grown/edited from here).
+const DEFAULT_SOURCE_SEED = ['Library', 'Kobo', 'Kindle', 'Yomu'];
 
 // In-memory app state
 const state = {
   currentDetailId: null,   // id of book shown in detail/edit view
-  editSourceList: [],       // working copy of source[] while editing
   addMatches: [],           // last set of match candidates shown in Add Book
   previewMatch: null,       // match candidate currently shown in the (unsaved) preview screen
   previewContext: null,     // 'add' | 'refresh' - which flow opened the preview screen, and what its Apply/Add button should do
@@ -95,6 +101,47 @@ function addCategoryIfNew(name) {
  */
 function getCategoryList() {
   return categoryList.slice();
+}
+
+/**
+ * sourceList: same dynamic/persisted pattern as categoryList (see above),
+ * just seeded with DEFAULT_SOURCE_SEED on a brand-new browser instead of
+ * starting blank - source is a single-select dropdown identical to
+ * Category's, grown the same three ways: CSV import, "+ Add new source..."
+ * on the Edit screen, and reset-and-rebuilt on Restore from Backup.
+ */
+function loadSourceList() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SOURCE_STORAGE_KEY));
+    if (Array.isArray(parsed)) return parsed;
+  } catch (e) {
+    // fall through to the seed below
+  }
+  // Sorted here (not just left in DEFAULT_SOURCE_SEED's literal order) so
+  // sourceList is alphabetically sorted unconditionally from its very first
+  // read, the same invariant addSourceIfNew() maintains on every later change.
+  return DEFAULT_SOURCE_SEED.slice().sort((a, b) => a.localeCompare(b));
+}
+function saveSourceList(list) {
+  localStorage.setItem(SOURCE_STORAGE_KEY, JSON.stringify(list));
+}
+
+let sourceList = loadSourceList();
+if (localStorage.getItem(SOURCE_STORAGE_KEY) === null) saveSourceList(sourceList); // persist the seed on first run, so it's stable from here on
+
+function addSourceIfNew(name) {
+  const trimmed = String(name || '').trim();
+  if (!trimmed) return '';
+  const existing = sourceList.find((s) => s.toLowerCase() === trimmed.toLowerCase());
+  if (existing) return existing;
+  sourceList.push(trimmed);
+  sourceList.sort((a, b) => a.localeCompare(b));
+  saveSourceList(sourceList);
+  return trimmed;
+}
+
+function getSourceList() {
+  return sourceList.slice();
 }
 
 // ---------- View switching ----------
@@ -316,8 +363,8 @@ function buildBookRow(book) {
     : '';
   // Source line is omitted entirely when the book has no source set - not
   // shown as a blank line or placeholder.
-  const sourceLine = Array.isArray(book.source) && book.source.length > 0
-    ? `<div class="row-source">${escapeHtml(book.source.join(', '))}</div>`
+  const sourceLine = book.source
+    ? `<div class="row-source">${escapeHtml(book.source)}</div>`
     : '';
   text.innerHTML = `
     <div class="row-title">${escapeHtml(book.title || 'Untitled')}</div>
@@ -398,16 +445,12 @@ async function renderDetailView() {
     </div>
   `;
 
-  const sourceChips = (book.source && book.source.length)
-    ? book.source.map((s) => `<span class="chip">${escapeHtml(s)}</span>`).join('')
-    : '<span class="field-value">—</span>';
-
   document.getElementById('detailFields').innerHTML = `
     <div class="field-row"><span class="field-label">Series</span><span class="field-value">${book.series ? escapeHtml(book.series) + (book.seriesNumber ? ' #' + escapeHtml(String(book.seriesNumber)) : '') : '—'}</span></div>
     <div class="field-row"><span class="field-label">Category</span><span class="field-value">${book.category ? escapeHtml(book.category) : '—'}</span></div>
     <div class="field-row"><span class="field-label">Status</span><span class="field-value">${escapeHtml(book.status)}</span></div>
     <div class="field-row"><span class="field-label">Rating</span><span class="field-value">${book.rating ? rating.buildStarsHtml(book.rating) : '—'}</span></div>
-    <div class="field-row"><span class="field-label">Source</span><span class="field-value multi">${sourceChips}</span></div>
+    <div class="field-row"><span class="field-label">Source</span><span class="field-value">${book.source ? escapeHtml(book.source) : '—'}</span></div>
   `;
 
   document.getElementById('detailSynopsis').textContent = book.synopsis || 'No synopsis.';
@@ -438,7 +481,6 @@ function setDetailMode(mode) {
 async function enterEditMode() {
   const book = await db.getBook(state.currentDetailId);
   if (!book) return;
-  state.editSourceList = Array.isArray(book.source) ? book.source.slice() : [];
 
   setDetailMode('edit');
 
@@ -454,8 +496,7 @@ async function enterEditMode() {
   buildCategorySelect(book.category);
   buildSelect('editStatus', STATUS_OPTIONS, book.status, false);
   buildSelect('editRating', RATING_OPTIONS, book.rating, true, '—', plainStarsLabel);
-
-  renderSourceChips();
+  buildSourceSelect(book.source);
 }
 
 function buildSelect(elementId, options, selectedValue, allowBlank, blankLabel, labelFn) {
@@ -507,6 +548,30 @@ function handleCategorySelectChange(event) {
   const name = prompt('New category name:');
   const added = addCategoryIfNew(name);
   buildCategorySelect(added); // added === '' when cancelled/blank -> reselects the blank option
+}
+
+/**
+ * Builds the Edit screen's source <select> - identical pattern to
+ * buildCategorySelect(): a blank option, every entry in sourceList, then a
+ * trailing "+ Add new source..." sentinel. Single-select, unlike the old
+ * chip-based multi-select this replaced (see CLAUDE_CONTEXT.md for why -
+ * the chip popover was clipped to invisibility on iPhone by an ancestor's
+ * overflow:hidden, and a single value covers the common case anyway).
+ */
+function buildSourceSelect(selectedValue) {
+  buildSelect('editSource', sourceList, selectedValue, true);
+  const addOpt = document.createElement('option');
+  addOpt.value = ADD_NEW_SOURCE_VALUE;
+  addOpt.textContent = '+ Add new source…';
+  document.getElementById('editSource').appendChild(addOpt);
+}
+
+/** Handles "+ Add new source..." - same prompt/add/reselect flow as handleCategorySelectChange(). */
+function handleSourceSelectChange(event) {
+  if (event.target.value !== ADD_NEW_SOURCE_VALUE) return;
+  const name = prompt('New source name:');
+  const added = addSourceIfNew(name);
+  buildSourceSelect(added);
 }
 
 /**
@@ -577,104 +642,6 @@ async function handleCoverPaste(event) {
   updateEditCoverPreview();
 }
 
-function renderSourceChips() {
-  const container = document.getElementById('editSourceChips');
-  container.innerHTML = '';
-  state.editSourceList.forEach((src) => {
-    const chip = document.createElement('span');
-    chip.className = 'chip removable';
-    chip.innerHTML = `${escapeHtml(src)} <span class="x">✕</span>`;
-    chip.addEventListener('click', () => {
-      state.editSourceList = state.editSourceList.filter((s) => s !== src);
-      renderSourceChips();
-    });
-    container.appendChild(chip);
-  });
-
-  const remaining = SOURCE_OPTIONS.filter((s) => !state.editSourceList.includes(s));
-  if (remaining.length > 0) {
-    container.appendChild(buildSourceAddChip(remaining));
-  }
-}
-
-/**
- * The "+ Add" chip and its inline dropdown of remaining SOURCE_OPTIONS.
- * SOURCE_OPTIONS is a fixed list (unlike categoryList), so this only ever
- * needs to offer a pick-from-list menu, never a "type a new one" path.
- * Replaces a native prompt() dialog with a small popover positioned under
- * the chip.
- */
-function buildSourceAddChip(remaining) {
-  const wrap = document.createElement('span');
-  wrap.className = 'source-add-wrap';
-
-  const addChip = document.createElement('span');
-  addChip.className = 'chip add-chip';
-  addChip.textContent = '＋ Add';
-  addChip.addEventListener('click', (e) => {
-    e.stopPropagation(); // don't let this click immediately trigger the outside-click closer below
-    if (wrap._menu) {
-      closeSourceMenu(wrap);
-    } else {
-      openSourceMenu(wrap, addChip, remaining);
-    }
-  });
-  wrap.appendChild(addChip);
-  return wrap;
-}
-
-/**
- * Opens the source-picker popover, appended to <body> and positioned with
- * `position: fixed` from the "+ Add" chip's live bounding rect - NOT
- * nested inside the chip's own .field-group. .field-group has
- * `overflow: hidden` (it's what rounds its corners), which would silently
- * clip an absolutely-positioned popover to invisibility - the menu was
- * genuinely opening, just cropped to nothing, which is why "+ Add" looked
- * like it did nothing at all rather than looking broken.
- */
-function openSourceMenu(wrap, anchorEl, remaining) {
-  const menu = document.createElement('div');
-  menu.className = 'source-menu';
-  remaining.forEach((src) => {
-    const item = document.createElement('div');
-    item.className = 'source-menu-item';
-    item.textContent = src;
-    item.addEventListener('click', (e) => {
-      e.stopPropagation();
-      state.editSourceList.push(src);
-      closeSourceMenu(wrap); // detach the outside-click listener before the rebuild below removes editSourceChips' contents
-      renderSourceChips();
-    });
-    menu.appendChild(item);
-  });
-  document.body.appendChild(menu);
-
-  const rect = anchorEl.getBoundingClientRect();
-  menu.style.top = `${rect.bottom + 6}px`;
-  menu.style.right = `${document.documentElement.clientWidth - rect.right}px`;
-
-  // Closes the menu on the next click anywhere outside it. Deferred by a
-  // tick so the click that opened the menu doesn't immediately close it.
-  function outsideClickHandler(e) {
-    if (menu.contains(e.target)) return; // menu items handle their own clicks
-    closeSourceMenu(wrap);
-  }
-  setTimeout(() => document.addEventListener('click', outsideClickHandler), 0);
-
-  wrap._menu = menu; // stashed (on the wrap, not the now-detached-from-it menu) so closeSourceMenu can find and remove it
-  wrap._closeMenuListener = outsideClickHandler;
-}
-
-function closeSourceMenu(wrap) {
-  if (wrap._menu) {
-    wrap._menu.remove();
-    wrap._menu = null;
-  }
-  if (wrap._closeMenuListener) {
-    document.removeEventListener('click', wrap._closeMenuListener);
-    wrap._closeMenuListener = null;
-  }
-}
 
 async function saveEdit() {
   const seriesNumberRaw = document.getElementById('editSeriesNumber').value;
@@ -687,7 +654,7 @@ async function saveEdit() {
     category: document.getElementById('editCategory').value,
     status: document.getElementById('editStatus').value,
     rating: rating.normalizeRating(document.getElementById('editRating').value),
-    source: state.editSourceList.slice(),
+    source: document.getElementById('editSource').value,
     synopsis: document.getElementById('editSynopsis').value,
     notes: document.getElementById('editNotes').value,
   };
@@ -962,7 +929,7 @@ async function handleCsvImport(event) {
   if (!file) return;
   const text = await file.text();
   const parsedBooks = csv.csvToBooks(text);
-  parsedBooks.forEach((book) => addCategoryIfNew(book.category));
+  parsedBooks.forEach((book) => { addCategoryIfNew(book.category); addSourceIfNew(book.source); });
   const result = await db.bulkAddBooks(parsedBooks);
 
   const recap = document.getElementById('importRecap');
@@ -1027,10 +994,14 @@ async function handleRestoreFile(event) {
   // category was added by hand or via a later CSV import.
   categoryList = [];
   saveCategoryList(categoryList);
+  // sourceList gets the identical reset-and-rebuild treatment, for the same reason.
+  sourceList = [];
+  saveSourceList(sourceList);
   for (const book of books) {
     const { id, ...rest } = book; // let IndexedDB assign fresh ids
     await db.addBook(Object.assign(db.emptyBook(), rest));
     addCategoryIfNew(rest.category);
+    addSourceIfNew(rest.source);
   }
   event.target.value = '';
   alert(`Restored ${books.length} book(s).`);
@@ -1098,6 +1069,7 @@ function wireEvents() {
   document.getElementById('editCoverFileInput').addEventListener('change', handleCoverFileSelected);
   document.getElementById('editCover').addEventListener('paste', handleCoverPaste);
   document.getElementById('editCategory').addEventListener('change', handleCategorySelectChange);
+  document.getElementById('editSource').addEventListener('change', handleSourceSelectChange);
 
   // Detail view - match preview mode (reached from Add Book or Refresh from Online Sources)
   document.getElementById('previewBackBtn').addEventListener('click', cancelMatchPreview);
@@ -1118,6 +1090,24 @@ function wireEvents() {
   document.getElementById('restoreFileInput').addEventListener('change', handleRestoreFile);
 }
 
+/**
+ * One-time-per-book migration for source's old array shape (source used to
+ * be a multi-select array, e.g. ['Kindle', 'Personal'], before it became a
+ * single-select string). Any book still holding an array gets rewritten to
+ * just its first entry - matches the "keep the first one" rule CSV import
+ * and Restore already apply going forward (see csv.js/handleRestoreFile).
+ * Runs on every startup but is a cheap no-op once every book has already
+ * been migrated, since Array.isArray(book.source) is false from then on.
+ */
+async function migrateLegacyArraySource() {
+  const books = await db.getAllBooks();
+  for (const book of books) {
+    if (Array.isArray(book.source)) {
+      await db.updateBook(book.id, { source: book.source[0] || '' });
+    }
+  }
+}
+
 let appInitialized = false;
 
 async function init() {
@@ -1127,6 +1117,7 @@ async function init() {
   document.getElementById('libraryTitle').textContent = LIBRARY_NAME;
   wireEvents();
   try {
+    await migrateLegacyArraySource();
     await renderListView();
     showView('listView');
   } catch (err) {

@@ -4,7 +4,9 @@
  * (not matched to any external tool's export schema).
  *
  * Column order: title,author,status,synopsis,source,category,series,seriesNumber,rating,notes
- * - "source" is a semicolon-separated list within the cell (e.g. "Kindle;Paperback")
+ * - "source" holds a single value (e.g. "Kindle") - one selection only, same as "category".
+ *   A cell with an old-style semicolon-separated list (from before source was single-select)
+ *   is still readable on import: only the first value is kept.
  * - Fields containing commas, quotes, or newlines are double-quote wrapped per CSV spec
  */
 
@@ -31,7 +33,7 @@ function booksToCsv(books) {
       author: book.author,
       status: book.status,
       synopsis: book.synopsis,
-      source: Array.isArray(book.source) ? book.source.join(';') : (book.source || ''),
+      source: book.source || '',
       category: book.category,
       series: book.series,
       seriesNumber: book.seriesNumber,
@@ -80,8 +82,8 @@ function parseCsvLine(line) {
 
 /**
  * Parses a full CSV string (header + rows) into an array of book-shaped
- * objects. Unknown/missing columns are tolerated; "source" is split back
- * into an array on semicolons.
+ * objects. Unknown/missing columns are tolerated; "source" keeps only its
+ * first value if the cell holds an old-style semicolon-separated list.
  */
 function csvToBooks(csvText) {
   const lines = csvText.split(/\r\n|\n|\r/).filter((line) => line.trim() !== '');
@@ -102,7 +104,7 @@ function csvToBooks(csvText) {
       author: record.author || '',
       status: record.status || 'To Read',
       synopsis: record.synopsis || '',
-      source: record.source ? record.source.split(';').map((s) => s.trim()).filter(Boolean) : [],
+      source: record.source ? record.source.split(';')[0].trim() : '',
       category: record.category || '',
       series: record.series || '',
       seriesNumber: record.seriesNumber ? Number(record.seriesNumber) || record.seriesNumber : null,

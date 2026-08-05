@@ -23,8 +23,9 @@ function getStatusQuickAction(status) {
 }
 
 /**
- * Filters books by a free-text query against title, author, or category
- * (case-insensitive substring match). Empty/blank query returns all books.
+ * Filters books by a free-text query against title, author, category,
+ * source, synopsis, or notes (case-insensitive substring match). Empty/
+ * blank query returns all books.
  */
 function filterBooks(books, query) {
   const q = (query || '').trim().toLowerCase();
@@ -33,7 +34,10 @@ function filterBooks(books, query) {
     return (
       (b.title || '').toLowerCase().includes(q) ||
       (b.author || '').toLowerCase().includes(q) ||
-      (b.category || '').toLowerCase().includes(q)
+      (b.category || '').toLowerCase().includes(q) ||
+      (b.source || '').toLowerCase().includes(q) ||
+      (b.synopsis || '').toLowerCase().includes(q) ||
+      (b.notes || '').toLowerCase().includes(q)
     );
   });
 }
