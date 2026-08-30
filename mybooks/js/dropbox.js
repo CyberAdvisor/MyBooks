@@ -253,6 +253,23 @@ async function getAccessToken() {
   return dbxState.accessToken;
 }
 
+/**
+ * Best-effort extraction of Dropbox's error_summary (or raw body) from a
+ * failed response, so thrown errors say *why* instead of just "failed" -
+ * the generic messages below were making the actual cause (e.g. a missing
+ * OAuth scope) impossible to diagnose from the UI alone.
+ */
+async function describeError(resp) {
+  const text = await resp.text().catch(() => '');
+  try {
+    const body = JSON.parse(text);
+    if (body && body.error_summary) return body.error_summary;
+  } catch (e) {
+    // Not JSON - fall through to the raw text.
+  }
+  return text || `HTTP ${resp.status}`;
+}
+
 // ---------- File operations ----------
 
 /**
@@ -278,7 +295,7 @@ async function uploadBackup(books) {
     body: json,
   });
   if (!resp.ok) {
-    throw new Error('Could not sync to Dropbox. Please try again.');
+    throw new Error(`Could not sync to Dropbox: ${await describeError(resp)}`);
   }
   return resp.json(); // file metadata, including the new client_modified
 }
@@ -302,7 +319,7 @@ async function downloadBackup() {
     return null;
   }
   if (!resp.ok) {
-    throw new Error('Could not fetch your library from Dropbox. Please try again.');
+    throw new Error(`Could not fetch your library from Dropbox: ${await describeError(resp)}`);
   }
   const books = await resp.json();
   if (!Array.isArray(books)) {
@@ -331,7 +348,7 @@ async function getRemoteModifiedTime() {
     return null; // path/not_found
   }
   if (!resp.ok) {
-    throw new Error('Could not check Dropbox for updates.');
+    throw new Error(`Could not check Dropbox for updates: ${await describeError(resp)}`);
   }
   const data = await resp.json();
   return new Date(data.client_modified);

@@ -210,16 +210,32 @@ await test('uploadBackup: a cached, still-valid access token skips the refresh c
   assert.strictEqual(refreshCalls, 1);
 });
 
-await test('uploadBackup: throws a user-presentable error on failure', async () => {
+await test('uploadBackup: throws a user-presentable error including Dropbox\'s own error_summary', async () => {
   resetConnection();
   fakeConnected();
   global.fetch = async (url) => {
     if (url === 'https://api.dropboxapi.com/oauth2/token') {
       return { ok: true, json: async () => ({ access_token: 'at1', expires_in: 14400 }) };
     }
-    return { ok: false };
+    return {
+      ok: false,
+      status: 403,
+      text: async () => JSON.stringify({ error_summary: 'missing_scope/...' }),
+    };
   };
-  await assert.rejects(() => dropbox.uploadBackup([]), /could not sync/i);
+  await assert.rejects(() => dropbox.uploadBackup([]), /could not sync.*missing_scope/is);
+});
+
+await test('uploadBackup: falls back to the raw response body when it is not JSON', async () => {
+  resetConnection();
+  fakeConnected();
+  global.fetch = async (url) => {
+    if (url === 'https://api.dropboxapi.com/oauth2/token') {
+      return { ok: true, json: async () => ({ access_token: 'at1', expires_in: 14400 }) };
+    }
+    return { ok: false, status: 500, text: async () => 'Internal Server Error' };
+  };
+  await assert.rejects(() => dropbox.uploadBackup([]), /could not sync.*Internal Server Error/is);
 });
 
 await test('downloadBackup: parses and returns the remote books array', async () => {
