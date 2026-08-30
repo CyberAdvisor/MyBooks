@@ -24,7 +24,10 @@ const LIBRARY_NAME = 'Library';
 //          carry a matching ?v= cache-busting suffix for the same reason.
 //   v1.2 - Added raw download diagnostics (see getLastDownloadDiagnostics
 //          in dropbox.js) surfaced in the empty-pull status message.
-const APP_VERSION = 'v1.2';
+//   v1.3 - downloadBackup()'s content fetch now forces cache: 'no-store',
+//          after diagnostics showed identical stale bytes on repeat pulls
+//          even once the underlying Dropbox file was confirmed rewritten.
+const APP_VERSION = 'v1.3';
 
 const COLLAPSE_STATE_KEY = 'book_library_collapsed_sections';
 const RATING_OPTIONS = [1, 2, 3, 4, 5];

@@ -269,8 +269,9 @@ await test('downloadBackup: goes through get_temporary_link, then a plain GET, a
       return { ok: true, json: async () => ({ link: FAKE_CONTENT_URL }) };
     }
     if (url === FAKE_CONTENT_URL) {
-      // The content fetch itself is a plain, header-less GET - no opts at all.
-      assert.strictEqual(opts, undefined);
+      // The content fetch is a plain, header-less GET (no custom headers,
+      // no auth) aside from forcing a real network round trip every time.
+      assert.deepStrictEqual(opts, { cache: 'no-store' });
       return { ok: true, text: async () => JSON.stringify(books) };
     }
     throw new Error('unexpected fetch: ' + url);

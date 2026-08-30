@@ -367,7 +367,14 @@ async function downloadBackup() {
   const { link } = await linkResp.json();
   lastDownloadDiagnostics.linkReceived = !!link;
 
-  const fileResp = await fetch(link);
+  // A live report hit the exact same stale bytes on repeat pulls even after
+  // the underlying file was confirmed rewritten server-side: Dropbox's
+  // temporary links can be a stable, reusable URL within their validity
+  // window, and if the browser cached the response from before the file
+  // changed, a plain fetch() to that same URL can keep serving it straight
+  // from cache without ever re-checking the network. cache: 'no-store'
+  // forces a real round trip every time.
+  const fileResp = await fetch(link, { cache: 'no-store' });
   lastDownloadDiagnostics.fileStatus = fileResp.status;
   lastDownloadDiagnostics.fileContentLength = fileResp.headers && fileResp.headers.get
     ? fileResp.headers.get('content-length')
