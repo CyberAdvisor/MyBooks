@@ -1103,7 +1103,7 @@ async function handleDropboxSyncNow() {
     const meta = await dropbox.uploadBackup(books);
     const modified = new Date(meta.client_modified);
     markLocalChange(modified.getTime());
-    showDropboxStatus(`Synced at ${formatSyncTime(modified)}`);
+    showDropboxStatus(`Synced at ${formatSyncTime(modified)} (${books.length} book${books.length === 1 ? '' : 's'} uploaded)`);
   } catch (err) {
     showDropboxStatus(err.message, true);
   }
@@ -1145,7 +1145,7 @@ async function syncFromDropboxIfNewer() {
       if (books && books.length > 0) {
         await replaceAllBooksWithBackup(books);
         markLocalChange(remoteModified.getTime());
-        showDropboxStatus(`Synced from Dropbox at ${formatSyncTime(remoteModified)}`);
+        showDropboxStatus(`Synced from Dropbox at ${formatSyncTime(remoteModified)} (${books.length} book${books.length === 1 ? '' : 's'} loaded)`);
       } else {
         showDropboxStatus('Connected. Dropbox backup is empty too — tap Sync Now once you add books.');
       }
@@ -1159,18 +1159,18 @@ async function syncFromDropboxIfNewer() {
       if (books && books.length > 0) {
         await replaceAllBooksWithBackup(books);
         markLocalChange(remoteModified.getTime());
-        showDropboxStatus(`Synced from Dropbox at ${formatSyncTime(remoteModified)}`);
+        showDropboxStatus(`Synced from Dropbox at ${formatSyncTime(remoteModified)} (${books.length} book${books.length === 1 ? '' : 's'} loaded)`);
       } else if (books) {
         // Dropbox's copy exists but is empty while this device has real
         // data - refuse to silently wipe it (an empty array is truthy, so
         // this used to sail right through as a "success").
         showDropboxStatus(
-          'Dropbox backup appears empty, but this device has books - not overwriting local data. Please check Dropbox.',
+          `Dropbox backup appears empty, but this device has ${localBooks.length} book${localBooks.length === 1 ? '' : 's'} - not overwriting local data. Please check Dropbox.`,
           true
         );
       }
     } else {
-      showDropboxStatus(`Up to date (last synced ${formatSyncTime(localModified)})`);
+      showDropboxStatus(`Up to date (${localBooks.length} book${localBooks.length === 1 ? '' : 's'} locally, last synced ${formatSyncTime(localModified)})`);
     }
   } catch (err) {
     showDropboxStatus(err.message, true);
