@@ -1110,12 +1110,22 @@ async function handleDropboxSyncNow() {
 }
 
 /**
- * Called once on startup when Dropbox is already connected. Compares the
- * remote backup's modified time against the local last-change marker and
- * pulls the remote copy in if it's newer - covers the "edited on my other
- * device, then opened this one" case automatically, without a manual sync.
- * Per-book conflict resolution is out of scope (see chat history/product
- * decision): this is a whole-library, last-write-wins comparison.
+ * Called once on startup when Dropbox is already connected. Decides sync
+ * direction primarily from which side actually has data, not from the
+ * local-change timestamp marker alone - that marker is just a value in
+ * localStorage and can go stale or missing (a wiped/fresh device, a
+ * previous connect/disconnect cycle, storage eviction) independently of
+ * whether the local library itself is really empty. Relying on it alone
+ * to gate whether to pull once let a device with an empty local library
+ * report "synced" without ever actually pulling real content in.
+ *
+ * Rule: if local is empty and Dropbox has data, always pull - there is
+ * nothing local to lose. If local has data and Dropbox doesn't (or comes
+ * back empty), never overwrite local automatically. Only when *both*
+ * sides have data does the last-change timestamp decide whether Dropbox's
+ * copy is newer and worth pulling. Per-book conflict resolution is out of
+ * scope (see chat history/product decision): this is a whole-library,
+ * last-write-wins comparison.
  */
 async function syncFromDropboxIfNewer() {
   try {
@@ -1125,27 +1135,40 @@ async function syncFromDropboxIfNewer() {
       showDropboxStatus('Connected. No backup in Dropbox yet — tap Sync Now to upload.');
       return;
     }
+
+    const localBooks = await db.getAllBooks();
+
+    if (localBooks.length === 0) {
+      // Nothing local to lose - always pull whatever Dropbox has, ignoring
+      // the local-change timestamp entirely.
+      const books = await dropbox.downloadBackup();
+      if (books && books.length > 0) {
+        await replaceAllBooksWithBackup(books);
+        markLocalChange(remoteModified.getTime());
+        showDropboxStatus(`Synced from Dropbox at ${formatSyncTime(remoteModified)}`);
+      } else {
+        showDropboxStatus('Connected. Dropbox backup is empty too — tap Sync Now once you add books.');
+      }
+      return;
+    }
+
+    // Local has data. Only pull if Dropbox is both newer and non-empty.
     const localModified = getLocalChangeTime();
     if (!localModified || remoteModified > localModified) {
       const books = await dropbox.downloadBackup();
-      if (books) {
-        const localBooks = await db.getAllBooks();
-        if (books.length === 0 && localBooks.length > 0) {
-          // The remote backup came back empty while this device still has
-          // real local data - refuse to silently wipe it (an empty array
-          // is truthy, so this used to sail right through as a "success").
-          // A genuinely empty remote backup for a device that's also
-          // already empty is fine and falls through to the replace below.
-          showDropboxStatus(
-            'Dropbox backup appears empty, but this device has books - not overwriting local data. Please check Dropbox.',
-            true
-          );
-          return;
-        }
+      if (books && books.length > 0) {
         await replaceAllBooksWithBackup(books);
         markLocalChange(remoteModified.getTime());
+        showDropboxStatus(`Synced from Dropbox at ${formatSyncTime(remoteModified)}`);
+      } else if (books) {
+        // Dropbox's copy exists but is empty while this device has real
+        // data - refuse to silently wipe it (an empty array is truthy, so
+        // this used to sail right through as a "success").
+        showDropboxStatus(
+          'Dropbox backup appears empty, but this device has books - not overwriting local data. Please check Dropbox.',
+          true
+        );
       }
-      showDropboxStatus(`Synced from Dropbox at ${formatSyncTime(remoteModified)}`);
     } else {
       showDropboxStatus(`Up to date (last synced ${formatSyncTime(localModified)})`);
     }
