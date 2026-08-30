@@ -337,12 +337,18 @@ async function downloadBackup() {
     },
     body: JSON.stringify({ path: LIBRARY_FILE_PATH }),
   });
-  if (linkResp.status === 409) {
-    // path/not_found - nothing has been uploaded yet.
-    return null;
-  }
   if (!linkResp.ok) {
-    throw new Error(`Could not fetch your library from Dropbox: ${await describeError(linkResp)}`);
+    const detail = await describeError(linkResp);
+    if (linkResp.status === 409 && /not_found/i.test(detail)) {
+      // path/not_found - nothing has been uploaded yet. A 409 can also mean
+      // something else entirely (get_temporary_link needs the sharing.write
+      // scope, distinct from the files.* scopes the rest of this module
+      // uses, and scope/permission errors can surface as a 409 here too) -
+      // only treat it as "no backup yet" when the detail actually says so,
+      // rather than silently swallowing every 409 as if it were that case.
+      return null;
+    }
+    throw new Error(`Could not fetch your library from Dropbox: ${detail}`);
   }
   const { link } = await linkResp.json();
 

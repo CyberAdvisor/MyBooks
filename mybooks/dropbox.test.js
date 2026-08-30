@@ -290,9 +290,29 @@ await test('downloadBackup: resolves null (not an error) when no backup exists y
     if (url === 'https://api.dropboxapi.com/oauth2/token') {
       return { ok: true, json: async () => ({ access_token: 'at1', expires_in: 14400 }) };
     }
-    return { ok: false, status: 409 };
+    return {
+      ok: false,
+      status: 409,
+      text: async () => JSON.stringify({ error_summary: 'path/not_found/...' }),
+    };
   };
   assert.strictEqual(await dropbox.downloadBackup(), null);
+});
+
+await test('downloadBackup: a 409 for a reason other than not_found (e.g. a missing scope) throws instead of being swallowed', async () => {
+  resetConnection();
+  fakeConnected();
+  global.fetch = async (url) => {
+    if (url === 'https://api.dropboxapi.com/oauth2/token') {
+      return { ok: true, json: async () => ({ access_token: 'at1', expires_in: 14400 }) };
+    }
+    return {
+      ok: false,
+      status: 409,
+      text: async () => JSON.stringify({ error_summary: 'not_authorized/...' }),
+    };
+  };
+  await assert.rejects(() => dropbox.downloadBackup(), /not_authorized/i);
 });
 
 await test('downloadBackup: throws if the remote file is not a books array', async () => {
