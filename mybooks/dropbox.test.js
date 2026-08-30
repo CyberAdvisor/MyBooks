@@ -94,6 +94,32 @@ await test('connect: redirects to Dropbox authorize URL with PKCE challenge, and
   assert.ok(global.sessionStorage.getItem('dbx_code_verifier')); // saved for the return trip
 });
 
+await test('connect: has no pending microtask before the redirect (Safari drops navigations that happen after an await)', () => {
+  resetConnection();
+  // If connect() were async, this call would return a Promise before
+  // location.href is ever set, and the assertion below would fail.
+  const result = dropbox.connect();
+  assert.strictEqual(result, undefined, 'connect() must run synchronously, not return a Promise');
+  assert.ok(global.window.location.href.startsWith('https://www.dropbox.com/oauth2/authorize'));
+});
+
+await test('connect: two back-to-back calls (no await between them) each complete their own redirect synchronously', () => {
+  resetConnection();
+  // If connect() yielded to a microtask before redirecting (the old async
+  // bug), the href check right after the first call below would still see
+  // the pre-redirect URL.
+  dropbox.connect();
+  const firstHref = global.window.location.href;
+  const firstVerifier = global.sessionStorage.getItem('dbx_code_verifier');
+  assert.ok(firstHref.startsWith('https://www.dropbox.com/oauth2/authorize'));
+
+  dropbox.connect();
+  const secondHref = global.window.location.href;
+  const secondVerifier = global.sessionStorage.getItem('dbx_code_verifier');
+  assert.ok(secondHref.startsWith('https://www.dropbox.com/oauth2/authorize'));
+  assert.notStrictEqual(firstVerifier, secondVerifier, 'each connect() call generates a fresh PKCE verifier');
+});
+
 await test('handleAuthRedirect: no ?code in the URL is a no-op, resolves false', async () => {
   resetConnection();
   global.window.location.href = 'https://mybooks.fyi/mybooks/';
