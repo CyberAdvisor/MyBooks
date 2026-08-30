@@ -12,28 +12,49 @@
 // (e.g. "John's Library"). Leave as 'Library' for the default.
 const LIBRARY_NAME = 'Library';
 
+// App version, shown small and light next to the Library title. Bump this
+// on every release and add a line below describing what changed - this is
+// the running changelog for the whole app.
+//
+//   v1.0 - Status list now sorts by rating (highest first) before falling
+//          back to title, instead of by title alone.
+const APP_VERSION = 'v1.0';
+
 const COLLAPSE_STATE_KEY = 'book_library_collapsed_sections';
 const RATING_OPTIONS = [1, 2, 3, 4, 5];
-const STATUS_OPTIONS = logic.STATUS_ORDER; // Reading, To Read, Waiting, Read, Archive
+const STATUS_OPTIONS = logic.STATUS_ORDER; // Reading, To Read, Waiting, Read, Wanted, Shelved
 const CATEGORY_STORAGE_KEY = 'book_library_categories';
 // Sentinel option value for "+ Add new category..." in the Edit screen's
 // category <select> - never a real category name, so it can't collide.
 const ADD_NEW_CATEGORY_VALUE = '__add_new_category__';
-const SOURCE_OPTIONS = ['Library', 'Kobo', 'Kindle', 'Personal'];
+
+const SOURCE_STORAGE_KEY = 'book_library_sources';
+// Sentinel option value for "+ Add new source..." - same pattern as categories.
+const ADD_NEW_SOURCE_VALUE = '__add_new_source__';
+
+// Timestamp (epoch ms, as a string) of the most recent local book change,
+// used only to decide whether the local library or the Dropbox copy is
+// newer on startup - see syncFromDropboxIfNewer(). Not tied to any single
+// book; a whole-library "last changed" marker is enough since sync is
+// whole-library, not per-book (see dropbox.js header comment).
+const DBX_LOCAL_CHANGE_KEY = 'book_library_local_modified';
+// First-run seed for sourceList (below) - only used the very first time the
+// app runs on a browser with nothing in localStorage yet. After that,
+// sourceList is whatever's actually been persisted (grown/edited from here).
+const DEFAULT_SOURCE_SEED = ['Library', 'Kobo', 'Kindle', 'Yomu'];
 
 // In-memory app state
 const state = {
   currentDetailId: null,   // id of book shown in detail/edit view
-  editSourceList: [],       // working copy of source[] while editing
   addMatches: [],           // last set of match candidates shown in Add Book
   previewMatch: null,       // match candidate currently shown in the (unsaved) preview screen
   previewContext: null,     // 'add' | 'refresh' - which flow opened the preview screen, and what its Apply/Add button should do
   refreshMatches: [],       // last set of match candidates shown by "Refresh from Online Sources"
   editCoverValue: '',       // working copy of coverUrl while editing (may be a data: URI)
   searchQuery: '',
-  listMode: 'status',       // 'status' | 'authors' | 'categories' | 'drilldown'
-  drilldownType: null,      // 'author' | 'category', when listMode === 'drilldown'
-  drilldownValue: null,     // the specific author name or category name being viewed
+  listMode: 'status',       // 'status' | 'authors' | 'categories' | 'series' | 'drilldown'
+  drilldownType: null,      // 'author' | 'category' | 'series', when listMode === 'drilldown'
+  drilldownValue: null,     // the specific author/category/series name being viewed
 };
 
 function loadCollapsedSections() {
@@ -97,6 +118,47 @@ function getCategoryList() {
   return categoryList.slice();
 }
 
+/**
+ * sourceList: same dynamic/persisted pattern as categoryList (see above),
+ * just seeded with DEFAULT_SOURCE_SEED on a brand-new browser instead of
+ * starting blank - source is a single-select dropdown identical to
+ * Category's, grown the same three ways: CSV import, "+ Add new source..."
+ * on the Edit screen, and reset-and-rebuilt on Restore from Backup.
+ */
+function loadSourceList() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SOURCE_STORAGE_KEY));
+    if (Array.isArray(parsed)) return parsed;
+  } catch (e) {
+    // fall through to the seed below
+  }
+  // Sorted here (not just left in DEFAULT_SOURCE_SEED's literal order) so
+  // sourceList is alphabetically sorted unconditionally from its very first
+  // read, the same invariant addSourceIfNew() maintains on every later change.
+  return DEFAULT_SOURCE_SEED.slice().sort((a, b) => a.localeCompare(b));
+}
+function saveSourceList(list) {
+  localStorage.setItem(SOURCE_STORAGE_KEY, JSON.stringify(list));
+}
+
+let sourceList = loadSourceList();
+if (localStorage.getItem(SOURCE_STORAGE_KEY) === null) saveSourceList(sourceList); // persist the seed on first run, so it's stable from here on
+
+function addSourceIfNew(name) {
+  const trimmed = String(name || '').trim();
+  if (!trimmed) return '';
+  const existing = sourceList.find((s) => s.toLowerCase() === trimmed.toLowerCase());
+  if (existing) return existing;
+  sourceList.push(trimmed);
+  sourceList.sort((a, b) => a.localeCompare(b));
+  saveSourceList(sourceList);
+  return trimmed;
+}
+
+function getSourceList() {
+  return sourceList.slice();
+}
+
 // ---------- View switching ----------
 
 function showView(viewId) {
@@ -118,6 +180,7 @@ async function renderListView() {
 
   if (state.listMode === 'authors') return renderAuthorsMode(allBooks);
   if (state.listMode === 'categories') return renderCategoriesMode(allBooks);
+  if (state.listMode === 'series') return renderSeriesMode(allBooks);
   if (state.listMode === 'drilldown') return renderDrilldownMode(allBooks);
   return renderStatusMode(allBooks);
 }
@@ -213,10 +276,48 @@ function renderCategoriesMode(allBooks) {
   container.appendChild(card);
 }
 
+function renderSeriesMode(allBooks) {
+  const groups = logic.buildSeriesIndex(allBooks);
+  const container = document.getElementById('listContent');
+  container.innerHTML = '';
+
+  if (groups.length === 0) {
+    container.innerHTML = '<div class="empty-state">No books with a series set yet.</div>';
+    return;
+  }
+
+  groups.forEach(({ letter, series }) => {
+    const header = document.createElement('div');
+    header.className = 'section-label';
+    header.textContent = letter;
+    container.appendChild(header);
+
+    const card = document.createElement('div');
+    card.className = 'card';
+    series.forEach(({ name, count, author }) => {
+      card.appendChild(buildIndexRow(name, count, 'series', author));
+    });
+    container.appendChild(card);
+  });
+}
+
+const DRILLDOWN_LOOKUPS = {
+  author: logic.booksByAuthor,
+  category: logic.booksByCategory,
+  series: logic.booksBySeries,
+};
+
+// Which segmented-control mode each drilldown type returns to via the
+// drilldown "‹ Back" button - not a simple pluralization (category ->
+// categories), so kept as an explicit map rather than derived from the string.
+const DRILLDOWN_PARENT_MODE = {
+  author: 'authors',
+  category: 'categories',
+  series: 'series',
+};
+
 function renderDrilldownMode(allBooks) {
-  const books = state.drilldownType === 'author'
-    ? logic.booksByAuthor(allBooks, state.drilldownValue)
-    : logic.booksByCategory(allBooks, state.drilldownValue);
+  const books = DRILLDOWN_LOOKUPS[state.drilldownType](allBooks, state.drilldownValue);
 
   const container = document.getElementById('listContent');
   container.innerHTML = '';
@@ -239,14 +340,21 @@ function openDrilldown(type, value) {
   renderListView();
 }
 
-/** A simple name/count row used by both Authors and Categories index views. */
-function buildIndexRow(name, count, indexType) {
+/**
+ * A simple name/count row used by the Authors, Categories, and Series
+ * index views. `subtitle`, when given (currently just Series' author),
+ * renders below the name in the same small/light style as a book row's
+ * author line (.row-author) - omitted entirely when blank, not shown as
+ * an empty line, same convention as buildBookRow's optional lines.
+ */
+function buildIndexRow(name, count, indexType, subtitle) {
   const row = document.createElement('div');
   row.className = 'row';
-  row.dataset.indexType = indexType; // 'author' | 'category' - read by the delegated click handler
+  row.dataset.indexType = indexType; // 'author' | 'category' | 'series' - read by the delegated click handler
   row.dataset.indexValue = name;
+  const subtitleLine = subtitle ? `<div class="row-author">${escapeHtml(subtitle)}</div>` : '';
   row.innerHTML = `
-    <div class="row-text"><div class="row-title">${escapeHtml(name)}</div></div>
+    <div class="row-text"><div class="row-title">${escapeHtml(name)}</div>${subtitleLine}</div>
     <span class="index-count">${count} ${count === 1 ? 'book' : 'books'}</span>
     <span class="chev-right">›</span>
   `;
@@ -270,8 +378,8 @@ function buildBookRow(book) {
     : '';
   // Source line is omitted entirely when the book has no source set - not
   // shown as a blank line or placeholder.
-  const sourceLine = Array.isArray(book.source) && book.source.length > 0
-    ? `<div class="row-source">${escapeHtml(book.source.join(', '))}</div>`
+  const sourceLine = book.source
+    ? `<div class="row-source">${escapeHtml(book.source)}</div>`
     : '';
   text.innerHTML = `
     <div class="row-title">${escapeHtml(book.title || 'Untitled')}</div>
@@ -281,7 +389,7 @@ function buildBookRow(book) {
   `;
   row.appendChild(text);
 
-  // Rating stars whenever the book has one (Read/Archive books normally)
+  // Rating stars whenever the book has one (Read/Shelved books normally)
   if (book.rating) {
     const starsWrap = document.createElement('span');
     starsWrap.className = 'row-rating';
@@ -297,6 +405,7 @@ function buildBookRow(book) {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       await db.updateBook(book.id, { status: quickAction.nextStatus });
+      markLocalChange();
       renderListView();
     });
     row.appendChild(btn);
@@ -352,16 +461,12 @@ async function renderDetailView() {
     </div>
   `;
 
-  const sourceChips = (book.source && book.source.length)
-    ? book.source.map((s) => `<span class="chip">${escapeHtml(s)}</span>`).join('')
-    : '<span class="field-value">—</span>';
-
   document.getElementById('detailFields').innerHTML = `
     <div class="field-row"><span class="field-label">Series</span><span class="field-value">${book.series ? escapeHtml(book.series) + (book.seriesNumber ? ' #' + escapeHtml(String(book.seriesNumber)) : '') : '—'}</span></div>
     <div class="field-row"><span class="field-label">Category</span><span class="field-value">${book.category ? escapeHtml(book.category) : '—'}</span></div>
-    <div class="field-row"><span class="field-label">Source</span><span class="field-value multi">${sourceChips}</span></div>
     <div class="field-row"><span class="field-label">Status</span><span class="field-value">${escapeHtml(book.status)}</span></div>
     <div class="field-row"><span class="field-label">Rating</span><span class="field-value">${book.rating ? rating.buildStarsHtml(book.rating) : '—'}</span></div>
+    <div class="field-row"><span class="field-label">Source</span><span class="field-value">${book.source ? escapeHtml(book.source) : '—'}</span></div>
   `;
 
   document.getElementById('detailSynopsis').textContent = book.synopsis || 'No synopsis.';
@@ -392,7 +497,6 @@ function setDetailMode(mode) {
 async function enterEditMode() {
   const book = await db.getBook(state.currentDetailId);
   if (!book) return;
-  state.editSourceList = Array.isArray(book.source) ? book.source.slice() : [];
 
   setDetailMode('edit');
 
@@ -408,8 +512,7 @@ async function enterEditMode() {
   buildCategorySelect(book.category);
   buildSelect('editStatus', STATUS_OPTIONS, book.status, false);
   buildSelect('editRating', RATING_OPTIONS, book.rating, true, '—', plainStarsLabel);
-
-  renderSourceChips();
+  buildSourceSelect(book.source);
 }
 
 function buildSelect(elementId, options, selectedValue, allowBlank, blankLabel, labelFn) {
@@ -461,6 +564,30 @@ function handleCategorySelectChange(event) {
   const name = prompt('New category name:');
   const added = addCategoryIfNew(name);
   buildCategorySelect(added); // added === '' when cancelled/blank -> reselects the blank option
+}
+
+/**
+ * Builds the Edit screen's source <select> - identical pattern to
+ * buildCategorySelect(): a blank option, every entry in sourceList, then a
+ * trailing "+ Add new source..." sentinel. Single-select, unlike the old
+ * chip-based multi-select this replaced (see CLAUDE_CONTEXT.md for why -
+ * the chip popover was clipped to invisibility on iPhone by an ancestor's
+ * overflow:hidden, and a single value covers the common case anyway).
+ */
+function buildSourceSelect(selectedValue) {
+  buildSelect('editSource', sourceList, selectedValue, true);
+  const addOpt = document.createElement('option');
+  addOpt.value = ADD_NEW_SOURCE_VALUE;
+  addOpt.textContent = '+ Add new source…';
+  document.getElementById('editSource').appendChild(addOpt);
+}
+
+/** Handles "+ Add new source..." - same prompt/add/reselect flow as handleCategorySelectChange(). */
+function handleSourceSelectChange(event) {
+  if (event.target.value !== ADD_NEW_SOURCE_VALUE) return;
+  const name = prompt('New source name:');
+  const added = addSourceIfNew(name);
+  buildSourceSelect(added);
 }
 
 /**
@@ -531,34 +658,6 @@ async function handleCoverPaste(event) {
   updateEditCoverPreview();
 }
 
-function renderSourceChips() {
-  const container = document.getElementById('editSourceChips');
-  container.innerHTML = '';
-  state.editSourceList.forEach((src) => {
-    const chip = document.createElement('span');
-    chip.className = 'chip removable';
-    chip.innerHTML = `${escapeHtml(src)} <span class="x">✕</span>`;
-    chip.addEventListener('click', () => {
-      state.editSourceList = state.editSourceList.filter((s) => s !== src);
-      renderSourceChips();
-    });
-    container.appendChild(chip);
-  });
-
-  const addChip = document.createElement('span');
-  addChip.className = 'chip add-chip';
-  addChip.textContent = '＋ Add';
-  addChip.addEventListener('click', () => {
-    const remaining = SOURCE_OPTIONS.filter((s) => !state.editSourceList.includes(s));
-    if (remaining.length === 0) return;
-    const choice = prompt(`Add source (${remaining.join(', ')}):`, remaining[0]);
-    if (choice && remaining.includes(choice)) {
-      state.editSourceList.push(choice);
-      renderSourceChips();
-    }
-  });
-  container.appendChild(addChip);
-}
 
 async function saveEdit() {
   const seriesNumberRaw = document.getElementById('editSeriesNumber').value;
@@ -571,17 +670,19 @@ async function saveEdit() {
     category: document.getElementById('editCategory').value,
     status: document.getElementById('editStatus').value,
     rating: rating.normalizeRating(document.getElementById('editRating').value),
-    source: state.editSourceList.slice(),
+    source: document.getElementById('editSource').value,
     synopsis: document.getElementById('editSynopsis').value,
     notes: document.getElementById('editNotes').value,
   };
   await db.updateBook(state.currentDetailId, changes);
+  markLocalChange();
   await renderDetailView();
 }
 
 async function deleteCurrentBook() {
   if (!confirm('Delete this book permanently? This cannot be undone.')) return;
   await db.deleteBook(state.currentDetailId);
+  markLocalChange();
   state.currentDetailId = null;
   showView('listView');
   renderListView();
@@ -589,6 +690,7 @@ async function deleteCurrentBook() {
 
 async function markCurrentBookRead() {
   await db.updateBook(state.currentDetailId, { status: 'Read' });
+  markLocalChange();
   renderDetailView();
 }
 
@@ -673,7 +775,9 @@ async function applyRefreshMatch() {
   if (Object.keys(changes).length === 0) {
     alert('No new information to fill in from this match (all fields already filled).');
   } else {
+    if (changes.category) addCategoryIfNew(changes.category); // same reason as addBookFromPreview - a filled-in category needs to land in categoryList too
     await db.updateBook(state.currentDetailId, changes);
+    markLocalChange();
   }
   state.previewMatch = null;
   state.previewContext = null;
@@ -807,7 +911,9 @@ async function addBookFromPreview() {
     category: match.category || '',
     coverUrl: match.coverUrl || '',
   });
+  addCategoryIfNew(newBook.category); // a category from Open Library still needs to land in categoryList, not just on the book, or the Categories view will never show it (same fix as CSV import/Restore)
   await db.addBook(newBook);
+  markLocalChange();
 
   state.previewMatch = null;
   state.previewContext = null;
@@ -829,6 +935,7 @@ async function addBookBlank() {
 
 async function addBookAndGoToDetail(newBook) {
   const id = await db.addBook(newBook);
+  markLocalChange();
   document.getElementById('addSearchTitle').value = '';
   document.getElementById('addSearchAuthor').value = '';
   document.getElementById('addMatchResults').innerHTML = '';
@@ -844,8 +951,9 @@ async function handleCsvImport(event) {
   if (!file) return;
   const text = await file.text();
   const parsedBooks = csv.csvToBooks(text);
-  parsedBooks.forEach((book) => addCategoryIfNew(book.category));
+  parsedBooks.forEach((book) => { addCategoryIfNew(book.category); addSourceIfNew(book.source); });
   const result = await db.bulkAddBooks(parsedBooks);
+  if (result.added > 0) markLocalChange();
 
   const recap = document.getElementById('importRecap');
   let html = `<div class="recap-line"><strong>${result.added} book(s) added.</strong></div>`;
@@ -877,6 +985,32 @@ async function handleBackupNow() {
   URL.revokeObjectURL(url);
 }
 
+/**
+ * Wipes local book data and replaces it wholesale with the given array,
+ * rebuilding categoryList/sourceList from scratch to match (same
+ * reset-then-rebuild reasoning as Restore has always used - see the
+ * removed inline comment this was factored out of, or CLAUDE_CONTEXT.md's
+ * "Restore is the one place the category list gets reset" section).
+ *
+ * Shared by handleRestoreFile (local file restore) and
+ * syncFromDropboxIfNewer (pulling a newer Dropbox copy) - both are really
+ * the same operation, "replace everything with this books array", just
+ * triggered from a different source.
+ */
+async function replaceAllBooksWithBackup(books) {
+  await db.clearAllBooks();
+  categoryList = [];
+  saveCategoryList(categoryList);
+  sourceList = [];
+  saveSourceList(sourceList);
+  for (const book of books) {
+    const { id, ...rest } = book; // let IndexedDB assign fresh ids
+    await db.addBook(Object.assign(db.emptyBook(), rest));
+    addCategoryIfNew(rest.category);
+    addSourceIfNew(rest.source);
+  }
+}
+
 async function handleRestoreFile(event) {
   const file = event.target.files[0];
   if (!file) return;
@@ -894,14 +1028,103 @@ async function handleRestoreFile(event) {
     event.target.value = '';
     return;
   }
-  await db.clearAllBooks();
-  for (const book of books) {
-    const { id, ...rest } = book; // let IndexedDB assign fresh ids
-    await db.addBook(Object.assign(db.emptyBook(), rest));
-  }
+  await replaceAllBooksWithBackup(books);
+  markLocalChange();
   event.target.value = '';
   alert(`Restored ${books.length} book(s).`);
   renderListView();
+}
+
+// ---------- Dropbox sync ----------
+// See js/dropbox.js for the actual API calls; this section is just the
+// app-level policy layered on top (when to sync, how to show status) plus
+// the local-change-timestamp bookkeeping used to decide sync direction.
+
+/** Records "right now" (or an explicit timestamp) as the last local change. */
+function markLocalChange(timestamp) {
+  localStorage.setItem(DBX_LOCAL_CHANGE_KEY, String(timestamp || Date.now()));
+}
+
+/** Returns the last local change time as a Date, or null if never recorded. */
+function getLocalChangeTime() {
+  const raw = localStorage.getItem(DBX_LOCAL_CHANGE_KEY);
+  return raw ? new Date(Number(raw)) : null;
+}
+
+function formatSyncTime(date) {
+  return date.toLocaleString();
+}
+
+/** Updates the Backup view's Dropbox section to reflect connection state. */
+function updateDropboxUI() {
+  const connected = dropbox.isConnected();
+  document.getElementById('dropboxConnectBtn').style.display = connected ? 'none' : 'block';
+  document.getElementById('dropboxSyncBtn').style.display = connected ? 'block' : 'none';
+  document.getElementById('dropboxDisconnectBtn').style.display = connected ? 'block' : 'none';
+  if (!connected) {
+    document.getElementById('dropboxStatus').textContent = '';
+  }
+}
+
+function showDropboxStatus(text, isError) {
+  const el = document.getElementById('dropboxStatus');
+  el.textContent = text;
+  el.classList.toggle('dropbox-status-error', !!isError);
+}
+
+function handleDropboxConnect() {
+  dropbox.connect(); // redirects the page to Dropbox; nothing more to do here
+}
+
+function handleDropboxDisconnect() {
+  dropbox.disconnect();
+  updateDropboxUI();
+}
+
+/** Manual "Sync Now" - pushes the current local library up to Dropbox. */
+async function handleDropboxSyncNow() {
+  try {
+    showDropboxStatus('Syncing…');
+    const books = await db.getAllBooks();
+    const meta = await dropbox.uploadBackup(books);
+    const modified = new Date(meta.client_modified);
+    markLocalChange(modified.getTime());
+    showDropboxStatus(`Synced at ${formatSyncTime(modified)}`);
+  } catch (err) {
+    showDropboxStatus(err.message, true);
+  }
+}
+
+/**
+ * Called once on startup when Dropbox is already connected. Compares the
+ * remote backup's modified time against the local last-change marker and
+ * pulls the remote copy in if it's newer - covers the "edited on my other
+ * device, then opened this one" case automatically, without a manual sync.
+ * Per-book conflict resolution is out of scope (see chat history/product
+ * decision): this is a whole-library, last-write-wins comparison.
+ */
+async function syncFromDropboxIfNewer() {
+  try {
+    showDropboxStatus('Checking Dropbox for updates…');
+    const remoteModified = await dropbox.getRemoteModifiedTime();
+    if (!remoteModified) {
+      showDropboxStatus('Connected. No backup in Dropbox yet — tap Sync Now to upload.');
+      return;
+    }
+    const localModified = getLocalChangeTime();
+    if (!localModified || remoteModified > localModified) {
+      const books = await dropbox.downloadBackup();
+      if (books) {
+        await replaceAllBooksWithBackup(books);
+        markLocalChange(remoteModified.getTime());
+      }
+      showDropboxStatus(`Synced from Dropbox at ${formatSyncTime(remoteModified)}`);
+    } else {
+      showDropboxStatus(`Up to date (last synced ${formatSyncTime(localModified)})`);
+    }
+  } catch (err) {
+    showDropboxStatus(err.message, true);
+  }
 }
 
 // ---------- Wiring ----------
@@ -923,7 +1146,7 @@ function wireEvents() {
     renderListView();
   });
 
-  // Status / Authors / Categories segmented control
+  // Status / Authors / Categories / Series segmented control
   document.querySelectorAll('#librarySegmented .segment').forEach((seg) => {
     seg.addEventListener('click', () => {
       state.listMode = seg.dataset.mode;
@@ -931,15 +1154,15 @@ function wireEvents() {
     });
   });
 
-  // Drill-down back button: return to whichever index (authors/categories) led here
+  // Drill-down back button: return to whichever index (authors/categories/series) led here
   document.getElementById('libraryDrilldownBackBtn').addEventListener('click', () => {
-    state.listMode = state.drilldownType === 'author' ? 'authors' : 'categories';
+    state.listMode = DRILLDOWN_PARENT_MODE[state.drilldownType];
     state.drilldownType = null;
     state.drilldownValue = null;
     renderListView();
   });
 
-  // Delegated click handling for all list rows (book rows + Authors/Categories index rows).
+  // Delegated click handling for all list rows (book rows + Authors/Categories/Series index rows).
   // Attached once to the container, which is never replaced - only its children are
   // rebuilt on each render, so this avoids re-attaching (and any risk of losing) a
   // listener on every individual row every time the list re-renders.
@@ -965,6 +1188,7 @@ function wireEvents() {
   document.getElementById('editCoverFileInput').addEventListener('change', handleCoverFileSelected);
   document.getElementById('editCover').addEventListener('paste', handleCoverPaste);
   document.getElementById('editCategory').addEventListener('change', handleCategorySelectChange);
+  document.getElementById('editSource').addEventListener('change', handleSourceSelectChange);
 
   // Detail view - match preview mode (reached from Add Book or Refresh from Online Sources)
   document.getElementById('previewBackBtn').addEventListener('click', cancelMatchPreview);
@@ -983,6 +1207,27 @@ function wireEvents() {
   // Backup view
   document.getElementById('backupNowBtn').addEventListener('click', handleBackupNow);
   document.getElementById('restoreFileInput').addEventListener('change', handleRestoreFile);
+  document.getElementById('dropboxConnectBtn').addEventListener('click', handleDropboxConnect);
+  document.getElementById('dropboxSyncBtn').addEventListener('click', handleDropboxSyncNow);
+  document.getElementById('dropboxDisconnectBtn').addEventListener('click', handleDropboxDisconnect);
+}
+
+/**
+ * One-time-per-book migration for source's old array shape (source used to
+ * be a multi-select array, e.g. ['Kindle', 'Personal'], before it became a
+ * single-select string). Any book still holding an array gets rewritten to
+ * just its first entry - matches the "keep the first one" rule CSV import
+ * and Restore already apply going forward (see csv.js/handleRestoreFile).
+ * Runs on every startup but is a cheap no-op once every book has already
+ * been migrated, since Array.isArray(book.source) is false from then on.
+ */
+async function migrateLegacyArraySource() {
+  const books = await db.getAllBooks();
+  for (const book of books) {
+    if (Array.isArray(book.source)) {
+      await db.updateBook(book.id, { source: book.source[0] || '' });
+    }
+  }
 }
 
 let appInitialized = false;
@@ -992,8 +1237,27 @@ async function init() {
   appInitialized = true;
 
   document.getElementById('libraryTitle').textContent = LIBRARY_NAME;
+  document.getElementById('libraryVersion').textContent = APP_VERSION;
   wireEvents();
   try {
+    await migrateLegacyArraySource();
+
+    // Dropbox sign-in and sync are handled outside this try's own error
+    // path (see the inner try/catch) - a Dropbox hiccup should surface as
+    // a status message in the Backup view, not the generic "couldn't
+    // start the app" screen below, which is meant for real startup
+    // failures like IndexedDB being unavailable.
+    try {
+      await dropbox.handleAuthRedirect(); // completes sign-in if we just came back from Dropbox
+      updateDropboxUI();
+      if (dropbox.isConnected()) {
+        await syncFromDropboxIfNewer();
+      }
+    } catch (dbxErr) {
+      showDropboxStatus(dbxErr.message, true);
+      console.error('Dropbox sync failed on startup:', dbxErr);
+    }
+
     await renderListView();
     showView('listView');
   } catch (err) {

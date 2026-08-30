@@ -4,12 +4,12 @@
  * Kept separate so they can be unit-tested directly under Node.
  */
 
-const STATUS_ORDER = ['Reading', 'To Read', 'Waiting', 'Read', 'Archive'];
+const STATUS_ORDER = ['Reading', 'To Read', 'Waiting', 'Read', 'Wanted', 'Shelved'];
 
 /**
  * The quick-action button shown on a book's row in the Status list view -
- * what it says and what status tapping it sets. Read and Archive don't get
- * one (nothing further to advance them to from the list view).
+ * what it says and what status tapping it sets. Read, Wanted, and Shelved
+ * don't get one (nothing further to advance them to from the list view).
  */
 const STATUS_QUICK_ACTIONS = {
   'Reading': { label: 'Mark Read', nextStatus: 'Read' },
@@ -23,8 +23,9 @@ function getStatusQuickAction(status) {
 }
 
 /**
- * Filters books by a free-text query against title, author, or category
- * (case-insensitive substring match). Empty/blank query returns all books.
+ * Filters books by a free-text query against title, author, category,
+ * source, synopsis, or notes (case-insensitive substring match). Empty/
+ * blank query returns all books.
  */
 function filterBooks(books, query) {
   const q = (query || '').trim().toLowerCase();
@@ -33,15 +34,19 @@ function filterBooks(books, query) {
     return (
       (b.title || '').toLowerCase().includes(q) ||
       (b.author || '').toLowerCase().includes(q) ||
-      (b.category || '').toLowerCase().includes(q)
+      (b.category || '').toLowerCase().includes(q) ||
+      (b.source || '').toLowerCase().includes(q) ||
+      (b.synopsis || '').toLowerCase().includes(q) ||
+      (b.notes || '').toLowerCase().includes(q)
     );
   });
 }
 
 /**
  * Groups books by Status into the fixed display order, each group's books
- * sorted alphabetically by title. Statuses with zero books are still
- * included (as empty arrays) so the UI can render a "0" count section.
+ * sorted by rating descending (unrated books last), then by title
+ * alphabetically within the same rating. Statuses with zero books are
+ * still included (as empty arrays) so the UI can render a "0" count section.
  */
 function groupBooksByStatus(books) {
   const groups = {};
@@ -53,7 +58,12 @@ function groupBooksByStatus(books) {
   });
 
   STATUS_ORDER.forEach((status) => {
-    groups[status].sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+    groups[status].sort((a, b) => {
+      const ar = a.rating || 0;
+      const br = b.rating || 0;
+      if (ar !== br) return br - ar;
+      return (a.title || '').localeCompare(b.title || '');
+    });
   });
 
   return STATUS_ORDER.map((status) => ({ status, books: groups[status] }));
@@ -107,11 +117,84 @@ function buildCategoriesIndex(books, categoryList) {
   return [...named, { name: 'Uncategorized', count: uncategorizedCount }];
 }
 
+/**
+ * Builds an alphabetically-grouped Series index from a list of books, the
+ * same shape as buildAuthorsIndex: one entry per distinct (trimmed) series
+ * name, with a book count, grouped by first letter. Blank series are
+ * excluded entirely - series is optional per-book metadata, like source,
+ * so there's no "no series" bucket the way Categories has "Uncategorized".
+ * Each entry also carries `author` - the most common (trimmed) author
+ * among that series' books, so the index can show it as a subtitle the
+ * same way the book list shows author under title. Series are almost
+ * always single-author in practice; on the rare case of a mismatch (a
+ * ghostwritten sequel, an anthology, a typo) this just picks whichever
+ * author appears most often for that series, with ties going to whichever
+ * was encountered first - not meant to be authoritative, just a helpful
+ * label. `author` is '' if none of the series' books have one set.
+ */
+function buildSeriesIndex(books) {
+  const counts = new Map();          // series name -> book count
+  const authorCounts = new Map();    // series name -> Map(author -> count)
+  books.forEach((book) => {
+    const name = (book.series || '').trim();
+    if (!name) return;
+    counts.set(name, (counts.get(name) || 0) + 1);
+
+    const author = (book.author || '').trim();
+    if (!author) return;
+    if (!authorCounts.has(name)) authorCounts.set(name, new Map());
+    const perAuthor = authorCounts.get(name);
+    perAuthor.set(author, (perAuthor.get(author) || 0) + 1);
+  });
+
+  const mostCommonAuthor = (name) => {
+    const perAuthor = authorCounts.get(name);
+    if (!perAuthor) return '';
+    let best = '', bestCount = 0;
+    for (const [author, count] of perAuthor) {
+      if (count > bestCount) { best = author; bestCount = count; }
+    }
+    return best;
+  };
+
+  const series = Array.from(counts.entries())
+    .map(([name, count]) => ({ name, count, author: mostCommonAuthor(name) }))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+
+  const groups = [];
+  let currentLetter = null;
+  series.forEach((s) => {
+    const letter = s.name.charAt(0).toUpperCase();
+    if (letter !== currentLetter) {
+      groups.push({ letter, series: [] });
+      currentLetter = letter;
+    }
+    groups[groups.length - 1].series.push(s);
+  });
+  return groups;
+}
+
 /** Books by a specific author (exact, trimmed match), sorted alphabetically by title. */
 function booksByAuthor(books, authorName) {
   return books
     .filter((b) => (b.author || '').trim() === authorName)
     .sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+}
+
+/**
+ * Books in a specific series (exact, trimmed match), sorted by series
+ * number when present (numbered before unnumbered), then by title.
+ */
+function booksBySeries(books, seriesName) {
+  return books
+    .filter((b) => (b.series || '').trim() === seriesName)
+    .sort((a, b) => {
+      const an = a.seriesNumber, bn = b.seriesNumber;
+      if (an != null && bn != null) return an - bn;
+      if (an != null) return -1;
+      if (bn != null) return 1;
+      return (a.title || '').localeCompare(b.title || '');
+    });
 }
 
 /**
@@ -128,7 +211,8 @@ function booksByCategory(books, categoryName) {
 
 const logicExports = {
   STATUS_ORDER, filterBooks, groupBooksByStatus,
-  buildAuthorsIndex, buildCategoriesIndex, booksByAuthor, booksByCategory,
+  buildAuthorsIndex, buildCategoriesIndex, buildSeriesIndex,
+  booksByAuthor, booksByCategory, booksBySeries,
   getStatusQuickAction,
 };
 
