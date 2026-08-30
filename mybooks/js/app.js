@@ -31,6 +31,13 @@ const ADD_NEW_CATEGORY_VALUE = '__add_new_category__';
 const SOURCE_STORAGE_KEY = 'book_library_sources';
 // Sentinel option value for "+ Add new source..." - same pattern as categories.
 const ADD_NEW_SOURCE_VALUE = '__add_new_source__';
+
+// Timestamp (epoch ms, as a string) of the most recent local book change,
+// used only to decide whether the local library or the Dropbox copy is
+// newer on startup - see syncFromDropboxIfNewer(). Not tied to any single
+// book; a whole-library "last changed" marker is enough since sync is
+// whole-library, not per-book (see dropbox.js header comment).
+const DBX_LOCAL_CHANGE_KEY = 'book_library_local_modified';
 // First-run seed for sourceList (below) - only used the very first time the
 // app runs on a browser with nothing in localStorage yet. After that,
 // sourceList is whatever's actually been persisted (grown/edited from here).
@@ -398,6 +405,7 @@ function buildBookRow(book) {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       await db.updateBook(book.id, { status: quickAction.nextStatus });
+      markLocalChange();
       renderListView();
     });
     row.appendChild(btn);
@@ -667,12 +675,14 @@ async function saveEdit() {
     notes: document.getElementById('editNotes').value,
   };
   await db.updateBook(state.currentDetailId, changes);
+  markLocalChange();
   await renderDetailView();
 }
 
 async function deleteCurrentBook() {
   if (!confirm('Delete this book permanently? This cannot be undone.')) return;
   await db.deleteBook(state.currentDetailId);
+  markLocalChange();
   state.currentDetailId = null;
   showView('listView');
   renderListView();
@@ -680,6 +690,7 @@ async function deleteCurrentBook() {
 
 async function markCurrentBookRead() {
   await db.updateBook(state.currentDetailId, { status: 'Read' });
+  markLocalChange();
   renderDetailView();
 }
 
@@ -766,6 +777,7 @@ async function applyRefreshMatch() {
   } else {
     if (changes.category) addCategoryIfNew(changes.category); // same reason as addBookFromPreview - a filled-in category needs to land in categoryList too
     await db.updateBook(state.currentDetailId, changes);
+    markLocalChange();
   }
   state.previewMatch = null;
   state.previewContext = null;
@@ -901,6 +913,7 @@ async function addBookFromPreview() {
   });
   addCategoryIfNew(newBook.category); // a category from Open Library still needs to land in categoryList, not just on the book, or the Categories view will never show it (same fix as CSV import/Restore)
   await db.addBook(newBook);
+  markLocalChange();
 
   state.previewMatch = null;
   state.previewContext = null;
@@ -922,6 +935,7 @@ async function addBookBlank() {
 
 async function addBookAndGoToDetail(newBook) {
   const id = await db.addBook(newBook);
+  markLocalChange();
   document.getElementById('addSearchTitle').value = '';
   document.getElementById('addSearchAuthor').value = '';
   document.getElementById('addMatchResults').innerHTML = '';
@@ -939,6 +953,7 @@ async function handleCsvImport(event) {
   const parsedBooks = csv.csvToBooks(text);
   parsedBooks.forEach((book) => { addCategoryIfNew(book.category); addSourceIfNew(book.source); });
   const result = await db.bulkAddBooks(parsedBooks);
+  if (result.added > 0) markLocalChange();
 
   const recap = document.getElementById('importRecap');
   let html = `<div class="recap-line"><strong>${result.added} book(s) added.</strong></div>`;
@@ -970,6 +985,32 @@ async function handleBackupNow() {
   URL.revokeObjectURL(url);
 }
 
+/**
+ * Wipes local book data and replaces it wholesale with the given array,
+ * rebuilding categoryList/sourceList from scratch to match (same
+ * reset-then-rebuild reasoning as Restore has always used - see the
+ * removed inline comment this was factored out of, or CLAUDE_CONTEXT.md's
+ * "Restore is the one place the category list gets reset" section).
+ *
+ * Shared by handleRestoreFile (local file restore) and
+ * syncFromDropboxIfNewer (pulling a newer Dropbox copy) - both are really
+ * the same operation, "replace everything with this books array", just
+ * triggered from a different source.
+ */
+async function replaceAllBooksWithBackup(books) {
+  await db.clearAllBooks();
+  categoryList = [];
+  saveCategoryList(categoryList);
+  sourceList = [];
+  saveSourceList(sourceList);
+  for (const book of books) {
+    const { id, ...rest } = book; // let IndexedDB assign fresh ids
+    await db.addBook(Object.assign(db.emptyBook(), rest));
+    addCategoryIfNew(rest.category);
+    addSourceIfNew(rest.source);
+  }
+}
+
 async function handleRestoreFile(event) {
   const file = event.target.files[0];
   if (!file) return;
@@ -987,33 +1028,103 @@ async function handleRestoreFile(event) {
     event.target.value = '';
     return;
   }
-  await db.clearAllBooks();
-
-  // The backup file only carries the books array (see handleBackupNow) -
-  // there's no separate exported category list - so the category list is
-  // rebuilt from scratch here, the same way CSV import folds categories in
-  // (addCategoryIfNew per book). Restore already replaces all book data
-  // wholesale ("Restoring will replace all current book data..." above),
-  // so categories get the same treatment: reset first, then rebuilt purely
-  // from what's actually in the restored books, rather than merged with
-  // whatever was in the category list before the restore. Without the
-  // reset, a restore onto an empty/fresh browser would otherwise leave the
-  // Categories view populated only with "Uncategorized" - blank until a
-  // category was added by hand or via a later CSV import.
-  categoryList = [];
-  saveCategoryList(categoryList);
-  // sourceList gets the identical reset-and-rebuild treatment, for the same reason.
-  sourceList = [];
-  saveSourceList(sourceList);
-  for (const book of books) {
-    const { id, ...rest } = book; // let IndexedDB assign fresh ids
-    await db.addBook(Object.assign(db.emptyBook(), rest));
-    addCategoryIfNew(rest.category);
-    addSourceIfNew(rest.source);
-  }
+  await replaceAllBooksWithBackup(books);
+  markLocalChange();
   event.target.value = '';
   alert(`Restored ${books.length} book(s).`);
   renderListView();
+}
+
+// ---------- Dropbox sync ----------
+// See js/dropbox.js for the actual API calls; this section is just the
+// app-level policy layered on top (when to sync, how to show status) plus
+// the local-change-timestamp bookkeeping used to decide sync direction.
+
+/** Records "right now" (or an explicit timestamp) as the last local change. */
+function markLocalChange(timestamp) {
+  localStorage.setItem(DBX_LOCAL_CHANGE_KEY, String(timestamp || Date.now()));
+}
+
+/** Returns the last local change time as a Date, or null if never recorded. */
+function getLocalChangeTime() {
+  const raw = localStorage.getItem(DBX_LOCAL_CHANGE_KEY);
+  return raw ? new Date(Number(raw)) : null;
+}
+
+function formatSyncTime(date) {
+  return date.toLocaleString();
+}
+
+/** Updates the Backup view's Dropbox section to reflect connection state. */
+function updateDropboxUI() {
+  const connected = dropbox.isConnected();
+  document.getElementById('dropboxConnectBtn').style.display = connected ? 'none' : 'block';
+  document.getElementById('dropboxSyncBtn').style.display = connected ? 'block' : 'none';
+  document.getElementById('dropboxDisconnectBtn').style.display = connected ? 'block' : 'none';
+  if (!connected) {
+    document.getElementById('dropboxStatus').textContent = '';
+  }
+}
+
+function showDropboxStatus(text, isError) {
+  const el = document.getElementById('dropboxStatus');
+  el.textContent = text;
+  el.classList.toggle('dropbox-status-error', !!isError);
+}
+
+function handleDropboxConnect() {
+  dropbox.connect(); // redirects the page to Dropbox; nothing more to do here
+}
+
+function handleDropboxDisconnect() {
+  dropbox.disconnect();
+  updateDropboxUI();
+}
+
+/** Manual "Sync Now" - pushes the current local library up to Dropbox. */
+async function handleDropboxSyncNow() {
+  try {
+    showDropboxStatus('Syncing…');
+    const books = await db.getAllBooks();
+    const meta = await dropbox.uploadBackup(books);
+    const modified = new Date(meta.client_modified);
+    markLocalChange(modified.getTime());
+    showDropboxStatus(`Synced at ${formatSyncTime(modified)}`);
+  } catch (err) {
+    showDropboxStatus(err.message, true);
+  }
+}
+
+/**
+ * Called once on startup when Dropbox is already connected. Compares the
+ * remote backup's modified time against the local last-change marker and
+ * pulls the remote copy in if it's newer - covers the "edited on my other
+ * device, then opened this one" case automatically, without a manual sync.
+ * Per-book conflict resolution is out of scope (see chat history/product
+ * decision): this is a whole-library, last-write-wins comparison.
+ */
+async function syncFromDropboxIfNewer() {
+  try {
+    showDropboxStatus('Checking Dropbox for updates…');
+    const remoteModified = await dropbox.getRemoteModifiedTime();
+    if (!remoteModified) {
+      showDropboxStatus('Connected. No backup in Dropbox yet — tap Sync Now to upload.');
+      return;
+    }
+    const localModified = getLocalChangeTime();
+    if (!localModified || remoteModified > localModified) {
+      const books = await dropbox.downloadBackup();
+      if (books) {
+        await replaceAllBooksWithBackup(books);
+        markLocalChange(remoteModified.getTime());
+      }
+      showDropboxStatus(`Synced from Dropbox at ${formatSyncTime(remoteModified)}`);
+    } else {
+      showDropboxStatus(`Up to date (last synced ${formatSyncTime(localModified)})`);
+    }
+  } catch (err) {
+    showDropboxStatus(err.message, true);
+  }
 }
 
 // ---------- Wiring ----------
@@ -1096,6 +1207,9 @@ function wireEvents() {
   // Backup view
   document.getElementById('backupNowBtn').addEventListener('click', handleBackupNow);
   document.getElementById('restoreFileInput').addEventListener('change', handleRestoreFile);
+  document.getElementById('dropboxConnectBtn').addEventListener('click', handleDropboxConnect);
+  document.getElementById('dropboxSyncBtn').addEventListener('click', handleDropboxSyncNow);
+  document.getElementById('dropboxDisconnectBtn').addEventListener('click', handleDropboxDisconnect);
 }
 
 /**
@@ -1127,6 +1241,23 @@ async function init() {
   wireEvents();
   try {
     await migrateLegacyArraySource();
+
+    // Dropbox sign-in and sync are handled outside this try's own error
+    // path (see the inner try/catch) - a Dropbox hiccup should surface as
+    // a status message in the Backup view, not the generic "couldn't
+    // start the app" screen below, which is meant for real startup
+    // failures like IndexedDB being unavailable.
+    try {
+      await dropbox.handleAuthRedirect(); // completes sign-in if we just came back from Dropbox
+      updateDropboxUI();
+      if (dropbox.isConnected()) {
+        await syncFromDropboxIfNewer();
+      }
+    } catch (dbxErr) {
+      showDropboxStatus(dbxErr.message, true);
+      console.error('Dropbox sync failed on startup:', dbxErr);
+    }
+
     await renderListView();
     showView('listView');
   } catch (err) {
