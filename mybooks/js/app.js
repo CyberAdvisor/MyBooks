@@ -22,7 +22,9 @@ const LIBRARY_NAME = 'Library';
 //          purely as a visible marker to confirm a device is running fresh
 //          JS and not a stale cached copy - script tags in index.html now
 //          carry a matching ?v= cache-busting suffix for the same reason.
-const APP_VERSION = 'v1.1';
+//   v1.2 - Added raw download diagnostics (see getLastDownloadDiagnostics
+//          in dropbox.js) surfaced in the empty-pull status message.
+const APP_VERSION = 'v1.2';
 
 const COLLAPSE_STATE_KEY = 'book_library_collapsed_sections';
 const RATING_OPTIONS = [1, 2, 3, 4, 5];
@@ -1151,10 +1153,12 @@ async function syncFromDropboxIfNewer() {
     // different failure modes with different causes, and telling them apart
     // is the only way to keep narrowing this down instead of guessing.
     function describeEmptyPull(books) {
+      const d = dropbox.getLastDownloadDiagnostics();
+      const diag = `[diag: linkStatus=${d.linkStatus}, linkReceived=${d.linkReceived}, fileStatus=${d.fileStatus}, fileContentLength=${d.fileContentLength}, textLength=${d.textLength}, preview="${d.textPreview}"]`;
       if (books === null) {
-        return "Dropbox's metadata says a backup exists, but the download link lookup itself says the file wasn't found. Please check the file directly on dropbox.com and let me know what you see.";
+        return `Dropbox's metadata says a backup exists, but the download link lookup itself says the file wasn't found. ${diag}`;
       }
-      return "Dropbox's backup file was fetched successfully but parsed as empty (0 books), even though its metadata timestamp says otherwise. Please check the file's actual content on dropbox.com and let me know what you see.";
+      return `Dropbox's backup file was fetched but parsed as empty (0 books), even though its metadata timestamp says otherwise. ${diag}`;
     }
 
     if (localBooks.length === 0) {

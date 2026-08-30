@@ -32,6 +32,12 @@ const dbxState = {
   accessTokenExpiresAt: 0, // epoch ms
 };
 
+// Raw forensic detail from the most recent downloadBackup() call - not
+// used for any decision-making, purely surfaced to the UI on an
+// unexpectedly-empty pull so a report of "it says empty" carries actual
+// numbers (response sizes, statuses) instead of just a symptom.
+const lastDownloadDiagnostics = {};
+
 // ---------- PKCE helpers ----------
 
 /** Generates a random, URL-safe string for use as a PKCE code verifier. */
@@ -328,6 +334,13 @@ async function uploadBackup(books) {
  * users to disable their blocker.
  */
 async function downloadBackup() {
+  lastDownloadDiagnostics.linkStatus = undefined;
+  lastDownloadDiagnostics.linkReceived = undefined;
+  lastDownloadDiagnostics.fileStatus = undefined;
+  lastDownloadDiagnostics.fileContentLength = undefined;
+  lastDownloadDiagnostics.textLength = undefined;
+  lastDownloadDiagnostics.textPreview = undefined;
+
   const token = await getAccessToken();
   const linkResp = await fetch('https://api.dropboxapi.com/2/files/get_temporary_link', {
     method: 'POST',
@@ -337,6 +350,7 @@ async function downloadBackup() {
     },
     body: JSON.stringify({ path: LIBRARY_FILE_PATH }),
   });
+  lastDownloadDiagnostics.linkStatus = linkResp.status;
   if (!linkResp.ok) {
     const detail = await describeError(linkResp);
     if (linkResp.status === 409 && /not_found/i.test(detail)) {
@@ -351,12 +365,19 @@ async function downloadBackup() {
     throw new Error(`Could not fetch your library from Dropbox: ${detail}`);
   }
   const { link } = await linkResp.json();
+  lastDownloadDiagnostics.linkReceived = !!link;
 
   const fileResp = await fetch(link);
+  lastDownloadDiagnostics.fileStatus = fileResp.status;
+  lastDownloadDiagnostics.fileContentLength = fileResp.headers && fileResp.headers.get
+    ? fileResp.headers.get('content-length')
+    : null;
   if (!fileResp.ok) {
     throw new Error(`Could not fetch your library from Dropbox: ${await describeError(fileResp)}`);
   }
   const text = await fileResp.text();
+  lastDownloadDiagnostics.textLength = text.length;
+  lastDownloadDiagnostics.textPreview = text.slice(0, 80);
   let books;
   try {
     books = JSON.parse(text);
@@ -367,6 +388,11 @@ async function downloadBackup() {
     throw new Error('The library file in Dropbox is not in the expected format.');
   }
   return books;
+}
+
+/** Raw diagnostics from the most recent downloadBackup() call - see the comment above lastDownloadDiagnostics. */
+function getLastDownloadDiagnostics() {
+  return { ...lastDownloadDiagnostics };
 }
 
 /**
@@ -407,6 +433,7 @@ const dropboxExports = {
   uploadBackup,
   downloadBackup,
   getRemoteModifiedTime,
+  getLastDownloadDiagnostics,
 };
 
 if (typeof module !== 'undefined' && module.exports) {
