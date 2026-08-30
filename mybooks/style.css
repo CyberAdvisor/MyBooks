@@ -231,7 +231,6 @@ body {
 /* Import recap */
 .recap-line { font-size: 14px; padding: 6px 14px; }
 .recap-skip { color: var(--secondary-label); font-style: italic; }
-.dropbox-status-error { color: var(--red); }
 
 /* Buttons for import/backup screens */
 .big-button {
