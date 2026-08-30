@@ -1140,14 +1140,18 @@ async function syncFromDropboxIfNewer() {
 
     // remoteModified being truthy already means Dropbox's own metadata call
     // confirmed a backup file exists. If the download call then comes back
-    // null/empty anyway, that's a contradiction worth calling out - it's a
-    // symptom we've actually hit of a content/ad blocker silently blocking
-    // requests to content.dropboxapi.com (a different subdomain than the
-    // metadata call, which some blockers treat as a tracker/CDN pattern)
-    // while letting the metadata call through, rather than a real empty
-    // backup.
-    const BLOCKER_HINT =
-      "Dropbox reports a backup exists, but downloading it returned nothing. If you use a content/ad blocker or privacy extension, try disabling it for this site (or check for other network filtering) and reload.";
+    // null/empty anyway, that's a contradiction worth calling out precisely
+    // rather than collapsing into one generic message - "downloadBackup()
+    // says not_found despite metadata saying otherwise" and "downloadBackup()
+    // fetched real bytes that parsed to a genuinely empty array" are very
+    // different failure modes with different causes, and telling them apart
+    // is the only way to keep narrowing this down instead of guessing.
+    function describeEmptyPull(books) {
+      if (books === null) {
+        return "Dropbox's metadata says a backup exists, but the download link lookup itself says the file wasn't found. Please check the file directly on dropbox.com and let me know what you see.";
+      }
+      return "Dropbox's backup file was fetched successfully but parsed as empty (0 books), even though its metadata timestamp says otherwise. Please check the file's actual content on dropbox.com and let me know what you see.";
+    }
 
     if (localBooks.length === 0) {
       // Nothing local to lose - always pull whatever Dropbox has, ignoring
@@ -1158,7 +1162,7 @@ async function syncFromDropboxIfNewer() {
         markLocalChange(remoteModified.getTime());
         showDropboxStatus(`Synced from Dropbox at ${formatSyncTime(remoteModified)} (${books.length} book${books.length === 1 ? '' : 's'} loaded)`);
       } else {
-        showDropboxStatus(BLOCKER_HINT, true);
+        showDropboxStatus(describeEmptyPull(books), true);
       }
       return;
     }
@@ -1177,7 +1181,7 @@ async function syncFromDropboxIfNewer() {
         // (an empty array is truthy, so this used to sail right through
         // as a "success").
         showDropboxStatus(
-          `${BLOCKER_HINT} This device's ${localBooks.length} local book${localBooks.length === 1 ? ' was' : 's were'} left untouched.`,
+          `${describeEmptyPull(books)} This device's ${localBooks.length} local book${localBooks.length === 1 ? ' was' : 's were'} left untouched.`,
           true
         );
       }
