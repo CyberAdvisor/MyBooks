@@ -1084,8 +1084,22 @@ function handleDropboxDisconnect() {
 /** Manual "Sync Now" - pushes the current local library up to Dropbox. */
 async function handleDropboxSyncNow() {
   try {
-    showDropboxStatus('Syncing…');
     const books = await db.getAllBooks();
+    if (books.length === 0) {
+      // Pushing an empty library overwrites whatever backup is already in
+      // Dropbox (mode: 'overwrite') - if this device's local data is empty
+      // for any reason other than "the library is genuinely empty" (a
+      // failed pull, a fresh/misconfigured device, etc.), this would
+      // silently destroy the real backup. Require explicit confirmation.
+      const proceed = confirm(
+        'Your local library is empty. Syncing now will overwrite your Dropbox backup with an empty library. Continue?'
+      );
+      if (!proceed) {
+        showDropboxStatus('Sync canceled.');
+        return;
+      }
+    }
+    showDropboxStatus('Syncing…');
     const meta = await dropbox.uploadBackup(books);
     const modified = new Date(meta.client_modified);
     markLocalChange(modified.getTime());
@@ -1115,6 +1129,19 @@ async function syncFromDropboxIfNewer() {
     if (!localModified || remoteModified > localModified) {
       const books = await dropbox.downloadBackup();
       if (books) {
+        const localBooks = await db.getAllBooks();
+        if (books.length === 0 && localBooks.length > 0) {
+          // The remote backup came back empty while this device still has
+          // real local data - refuse to silently wipe it (an empty array
+          // is truthy, so this used to sail right through as a "success").
+          // A genuinely empty remote backup for a device that's also
+          // already empty is fine and falls through to the replace below.
+          showDropboxStatus(
+            'Dropbox backup appears empty, but this device has books - not overwriting local data. Please check Dropbox.',
+            true
+          );
+          return;
+        }
         await replaceAllBooksWithBackup(books);
         markLocalChange(remoteModified.getTime());
       }
