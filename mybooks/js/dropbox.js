@@ -340,6 +340,8 @@ async function downloadBackup() {
   lastDownloadDiagnostics.fileContentLength = undefined;
   lastDownloadDiagnostics.textLength = undefined;
   lastDownloadDiagnostics.textPreview = undefined;
+  lastDownloadDiagnostics.usedDirectFallback = false;
+  lastDownloadDiagnostics.directTextLength = undefined;
 
   const token = await getAccessToken();
   const linkResp = await fetch('https://api.dropboxapi.com/2/files/get_temporary_link', {
@@ -360,6 +362,13 @@ async function downloadBackup() {
       // uses, and scope/permission errors can surface as a 409 here too) -
       // only treat it as "no backup yet" when the detail actually says so,
       // rather than silently swallowing every 409 as if it were that case.
+      // Try the direct-POST fallback first, in case this "not found" is
+      // itself a caching artifact rather than the truth.
+      const direct = await tryDirectDownload(token);
+      if (direct && direct.length > 0) {
+        lastDownloadDiagnostics.usedDirectFallback = true;
+        return direct;
+      }
       return null;
     }
     throw new Error(`Could not fetch your library from Dropbox: ${detail}`);
@@ -394,7 +403,49 @@ async function downloadBackup() {
   if (!Array.isArray(books)) {
     throw new Error('The library file in Dropbox is not in the expected format.');
   }
+  if (books.length === 0) {
+    // Suspicious on its own merits (see the tryDirectDownload comment) -
+    // double-check with the direct-POST fallback before trusting it.
+    const direct = await tryDirectDownload(token);
+    if (direct && direct.length > 0) {
+      lastDownloadDiagnostics.usedDirectFallback = true;
+      return direct;
+    }
+  }
   return books;
+}
+
+/**
+ * Fallback used when the get_temporary_link path above comes back empty
+ * or not-found: POSTs directly to content.dropboxapi.com/2/files/download,
+ * this module's original implementation. POST requests are essentially
+ * never cached by intermediate network proxies the way a plain GET to a
+ * file-shaped URL can be - cache: 'no-store' on that GET only controls
+ * the browser's own cache, not anything upstream, and a live report kept
+ * getting identical stale bytes back from the temp-link GET even after
+ * the file was independently confirmed rewritten server-side. This has no
+ * such caching surface. Best-effort: swallows its own failures and
+ * returns null, since the caller already has its own primary result (or
+ * error) to fall back to.
+ */
+async function tryDirectDownload(token) {
+  try {
+    const resp = await fetch('https://content.dropboxapi.com/2/files/download', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Dropbox-API-Arg': JSON.stringify({ path: LIBRARY_FILE_PATH }),
+      },
+      cache: 'no-store',
+    });
+    if (!resp.ok) return null;
+    const text = await resp.text();
+    lastDownloadDiagnostics.directTextLength = text.length;
+    const parsed = JSON.parse(text);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch (e) {
+    return null;
+  }
 }
 
 /** Raw diagnostics from the most recent downloadBackup() call - see the comment above lastDownloadDiagnostics. */

@@ -284,6 +284,54 @@ await test('downloadBackup: goes through get_temporary_link, then a plain GET, a
   ]);
 });
 
+const DIRECT_DOWNLOAD_URL = 'https://content.dropboxapi.com/2/files/download';
+
+await test('downloadBackup: falls back to a direct content.dropboxapi.com POST when the temp-link GET returns a suspicious empty array', async () => {
+  resetConnection();
+  fakeConnected();
+  const realBooks = [{ title: 'Dune', author: 'Frank Herbert' }];
+  const calls = [];
+  global.fetch = async (url, opts) => {
+    calls.push(url);
+    if (url === 'https://api.dropboxapi.com/oauth2/token') {
+      return { ok: true, json: async () => ({ access_token: 'at1', expires_in: 14400 }) };
+    }
+    if (url === TEMP_LINK_URL) {
+      return { ok: true, json: async () => ({ link: FAKE_CONTENT_URL }) };
+    }
+    if (url === FAKE_CONTENT_URL) {
+      return { ok: true, text: async () => '[]' }; // stale/cached empty response
+    }
+    if (url === DIRECT_DOWNLOAD_URL) {
+      assert.strictEqual(opts.headers.Authorization, 'Bearer at1');
+      assert.deepStrictEqual(JSON.parse(opts.headers['Dropbox-API-Arg']), { path: '/library-backup.json' });
+      return { ok: true, text: async () => JSON.stringify(realBooks) };
+    }
+    throw new Error('unexpected fetch: ' + url);
+  };
+  assert.deepStrictEqual(await dropbox.downloadBackup(), realBooks);
+  assert.ok(calls.includes(DIRECT_DOWNLOAD_URL), 'expected the direct-download fallback to have been attempted');
+});
+
+await test('downloadBackup: falls back to a direct download when get_temporary_link says not_found but the direct POST finds real data', async () => {
+  resetConnection();
+  fakeConnected();
+  const realBooks = [{ title: 'Emma', author: 'Jane Austen' }];
+  global.fetch = async (url) => {
+    if (url === 'https://api.dropboxapi.com/oauth2/token') {
+      return { ok: true, json: async () => ({ access_token: 'at1', expires_in: 14400 }) };
+    }
+    if (url === TEMP_LINK_URL) {
+      return { ok: false, status: 409, text: async () => JSON.stringify({ error_summary: 'path/not_found/...' }) };
+    }
+    if (url === DIRECT_DOWNLOAD_URL) {
+      return { ok: true, text: async () => JSON.stringify(realBooks) };
+    }
+    throw new Error('unexpected fetch: ' + url);
+  };
+  assert.deepStrictEqual(await dropbox.downloadBackup(), realBooks);
+});
+
 await test('downloadBackup: resolves null (not an error) when no backup exists yet', async () => {
   resetConnection();
   fakeConnected();
