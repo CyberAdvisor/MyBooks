@@ -18,7 +18,11 @@ const LIBRARY_NAME = 'Library';
 //
 //   v1.0 - Status list now sorts by rating (highest first) before falling
 //          back to title, instead of by title alone.
-const APP_VERSION = 'v1.0';
+//   v1.1 - Dropbox sync fixes (see dropbox.js/app.js history). Also bumped
+//          purely as a visible marker to confirm a device is running fresh
+//          JS and not a stale cached copy - script tags in index.html now
+//          carry a matching ?v= cache-busting suffix for the same reason.
+const APP_VERSION = 'v1.1';
 
 const COLLAPSE_STATE_KEY = 'book_library_collapsed_sections';
 const RATING_OPTIONS = [1, 2, 3, 4, 5];
