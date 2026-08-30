@@ -194,6 +194,18 @@ await test('uploadBackup: refreshes an access token, then PUTs the JSON to the a
   assert.deepStrictEqual(calls, ['https://api.dropboxapi.com/oauth2/token', 'https://content.dropboxapi.com/2/files/upload']);
 });
 
+await test('uploadBackup: throws if Dropbox\'s 200 response is missing client_modified (e.g. a blocker faking success)', async () => {
+  resetConnection();
+  fakeConnected();
+  global.fetch = async (url) => {
+    if (url === 'https://api.dropboxapi.com/oauth2/token') {
+      return { ok: true, json: async () => ({ access_token: 'at1', expires_in: 14400 }) };
+    }
+    return { ok: true, json: async () => ({}) }; // no client_modified at all
+  };
+  await assert.rejects(() => dropbox.uploadBackup([]), /did not confirm the upload/i);
+});
+
 await test('uploadBackup: a cached, still-valid access token skips the refresh call', async () => {
   resetConnection();
   fakeConnected();
@@ -238,17 +250,37 @@ await test('uploadBackup: falls back to the raw response body when it is not JSO
   await assert.rejects(() => dropbox.uploadBackup([]), /could not sync.*Internal Server Error/is);
 });
 
-await test('downloadBackup: parses and returns the remote books array', async () => {
+const TEMP_LINK_URL = 'https://api.dropboxapi.com/2/files/get_temporary_link';
+const FAKE_CONTENT_URL = 'https://dl.dropboxusercontent.com/fake-link';
+
+await test('downloadBackup: goes through get_temporary_link, then a plain GET, and returns the parsed books array', async () => {
   resetConnection();
   fakeConnected();
   const books = [{ title: 'Emma', author: 'Jane Austen' }];
-  global.fetch = async (url) => {
+  const calls = [];
+  global.fetch = async (url, opts) => {
+    calls.push(url);
     if (url === 'https://api.dropboxapi.com/oauth2/token') {
       return { ok: true, json: async () => ({ access_token: 'at1', expires_in: 14400 }) };
     }
-    return { ok: true, json: async () => books };
+    if (url === TEMP_LINK_URL) {
+      assert.strictEqual(opts.headers.Authorization, 'Bearer at1');
+      assert.deepStrictEqual(JSON.parse(opts.body), { path: '/library-backup.json' });
+      return { ok: true, json: async () => ({ link: FAKE_CONTENT_URL }) };
+    }
+    if (url === FAKE_CONTENT_URL) {
+      // The content fetch itself is a plain, header-less GET - no opts at all.
+      assert.strictEqual(opts, undefined);
+      return { ok: true, text: async () => JSON.stringify(books) };
+    }
+    throw new Error('unexpected fetch: ' + url);
   };
   assert.deepStrictEqual(await dropbox.downloadBackup(), books);
+  assert.deepStrictEqual(calls, [
+    'https://api.dropboxapi.com/oauth2/token',
+    TEMP_LINK_URL,
+    FAKE_CONTENT_URL,
+  ]);
 });
 
 await test('downloadBackup: resolves null (not an error) when no backup exists yet', async () => {
@@ -270,7 +302,25 @@ await test('downloadBackup: throws if the remote file is not a books array', asy
     if (url === 'https://api.dropboxapi.com/oauth2/token') {
       return { ok: true, json: async () => ({ access_token: 'at1', expires_in: 14400 }) };
     }
-    return { ok: true, json: async () => ({ not: 'an array' }) };
+    if (url === TEMP_LINK_URL) {
+      return { ok: true, json: async () => ({ link: FAKE_CONTENT_URL }) };
+    }
+    return { ok: true, text: async () => JSON.stringify({ not: 'an array' }) };
+  };
+  await assert.rejects(() => dropbox.downloadBackup(), /not in the expected format/i);
+});
+
+await test('downloadBackup: throws if the content fetch returns non-JSON (e.g. a blocker returning a stub body)', async () => {
+  resetConnection();
+  fakeConnected();
+  global.fetch = async (url) => {
+    if (url === 'https://api.dropboxapi.com/oauth2/token') {
+      return { ok: true, json: async () => ({ access_token: 'at1', expires_in: 14400 }) };
+    }
+    if (url === TEMP_LINK_URL) {
+      return { ok: true, json: async () => ({ link: FAKE_CONTENT_URL }) };
+    }
+    return { ok: true, text: async () => '' };
   };
   await assert.rejects(() => dropbox.downloadBackup(), /not in the expected format/i);
 });

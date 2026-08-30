@@ -297,31 +297,66 @@ async function uploadBackup(books) {
   if (!resp.ok) {
     throw new Error(`Could not sync to Dropbox: ${await describeError(resp)}`);
   }
-  return resp.json(); // file metadata, including the new client_modified
+  const meta = await resp.json(); // file metadata, including the new client_modified
+  // Uploads have no non-API-shaped fallback route the way downloadBackup()
+  // does (Dropbox's upload endpoint only exists on content.dropboxapi.com),
+  // so guard against a malformed/stubbed 200 response - e.g. a content
+  // blocker faking success - masquerading as a real upload instead of
+  // trusting the body blindly.
+  if (!meta || typeof meta.client_modified !== 'string' || Number.isNaN(new Date(meta.client_modified).getTime())) {
+    throw new Error('Dropbox did not confirm the upload (unexpected response). Please try again.');
+  }
+  return meta;
 }
 
 /**
  * Downloads and parses the app-folder backup file. Resolves null if no
  * backup has ever been uploaded yet (not an error - e.g. first connect on
  * a fresh account), rather than throwing.
+ *
+ * Goes through get_temporary_link (on api.dropboxapi.com, the same host
+ * getRemoteModifiedTime() already uses) rather than POSTing straight to
+ * content.dropboxapi.com with a custom Dropbox-API-Arg header. A real
+ * device hit that direct request coming back empty/not-found with no
+ * thrown error - almost certainly a content/ad blocker silently
+ * intercepting an API-shaped request on that subdomain, since the RPC-
+ * style metadata call on api.dropboxapi.com went through fine every time.
+ * The temporary link is a plain, header-less GET to
+ * dl.dropboxusercontent.com (auth is embedded in the URL itself), which
+ * doesn't look like an API call and isn't the kind of request blocklist
+ * rules typically target - this sidesteps the problem instead of asking
+ * users to disable their blocker.
  */
 async function downloadBackup() {
   const token = await getAccessToken();
-  const resp = await fetch('https://content.dropboxapi.com/2/files/download', {
+  const linkResp = await fetch('https://api.dropboxapi.com/2/files/get_temporary_link', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
-      'Dropbox-API-Arg': JSON.stringify({ path: LIBRARY_FILE_PATH }),
+      'Content-Type': 'application/json',
     },
+    body: JSON.stringify({ path: LIBRARY_FILE_PATH }),
   });
-  if (resp.status === 409) {
+  if (linkResp.status === 409) {
     // path/not_found - nothing has been uploaded yet.
     return null;
   }
-  if (!resp.ok) {
-    throw new Error(`Could not fetch your library from Dropbox: ${await describeError(resp)}`);
+  if (!linkResp.ok) {
+    throw new Error(`Could not fetch your library from Dropbox: ${await describeError(linkResp)}`);
   }
-  const books = await resp.json();
+  const { link } = await linkResp.json();
+
+  const fileResp = await fetch(link);
+  if (!fileResp.ok) {
+    throw new Error(`Could not fetch your library from Dropbox: ${await describeError(fileResp)}`);
+  }
+  const text = await fileResp.text();
+  let books;
+  try {
+    books = JSON.parse(text);
+  } catch (e) {
+    throw new Error('The library file in Dropbox is not in the expected format.');
+  }
   if (!Array.isArray(books)) {
     throw new Error('The library file in Dropbox is not in the expected format.');
   }
