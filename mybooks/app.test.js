@@ -18,7 +18,7 @@ const { IDBFactory, IDBKeyRange } = require('fake-indexeddb');
 
 const APP_DIR = __dirname;
 const HTML = fs.readFileSync(path.join(APP_DIR, 'index.html'), 'utf8');
-const JS_FILES = ['js/logic.js', 'js/db.js', 'js/api.js', 'js/csv.js', 'js/rating.js', 'js/app.js'];
+const JS_FILES = ['js/logic.js', 'js/db.js', 'js/api.js', 'js/csv.js', 'js/rating.js', 'js/dropbox.js', 'js/app.js'];
 
 let pass = 0, fail = 0;
 const failures = [];
