@@ -1138,6 +1138,17 @@ async function syncFromDropboxIfNewer() {
 
     const localBooks = await db.getAllBooks();
 
+    // remoteModified being truthy already means Dropbox's own metadata call
+    // confirmed a backup file exists. If the download call then comes back
+    // null/empty anyway, that's a contradiction worth calling out - it's a
+    // symptom we've actually hit of a content/ad blocker silently blocking
+    // requests to content.dropboxapi.com (a different subdomain than the
+    // metadata call, which some blockers treat as a tracker/CDN pattern)
+    // while letting the metadata call through, rather than a real empty
+    // backup.
+    const BLOCKER_HINT =
+      "Dropbox reports a backup exists, but downloading it returned nothing. If you use a content/ad blocker or privacy extension, try disabling it for this site (or check for other network filtering) and reload.";
+
     if (localBooks.length === 0) {
       // Nothing local to lose - always pull whatever Dropbox has, ignoring
       // the local-change timestamp entirely.
@@ -1147,7 +1158,7 @@ async function syncFromDropboxIfNewer() {
         markLocalChange(remoteModified.getTime());
         showDropboxStatus(`Synced from Dropbox at ${formatSyncTime(remoteModified)} (${books.length} book${books.length === 1 ? '' : 's'} loaded)`);
       } else {
-        showDropboxStatus('Connected. Dropbox backup is empty too — tap Sync Now once you add books.');
+        showDropboxStatus(BLOCKER_HINT, true);
       }
       return;
     }
@@ -1160,12 +1171,13 @@ async function syncFromDropboxIfNewer() {
         await replaceAllBooksWithBackup(books);
         markLocalChange(remoteModified.getTime());
         showDropboxStatus(`Synced from Dropbox at ${formatSyncTime(remoteModified)} (${books.length} book${books.length === 1 ? '' : 's'} loaded)`);
-      } else if (books) {
-        // Dropbox's copy exists but is empty while this device has real
-        // data - refuse to silently wipe it (an empty array is truthy, so
-        // this used to sail right through as a "success").
+      } else {
+        // Dropbox's copy exists but downloadBackup() came back empty/null
+        // while this device has real data - refuse to silently wipe it
+        // (an empty array is truthy, so this used to sail right through
+        // as a "success").
         showDropboxStatus(
-          `Dropbox backup appears empty, but this device has ${localBooks.length} book${localBooks.length === 1 ? '' : 's'} - not overwriting local data. Please check Dropbox.`,
+          `${BLOCKER_HINT} This device's ${localBooks.length} local book${localBooks.length === 1 ? ' was' : 's were'} left untouched.`,
           true
         );
       }
