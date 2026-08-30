@@ -20,14 +20,14 @@ const DBX_REDIRECT_URI = 'https://mybooks.fyi/mybooks/';
 const LIBRARY_FILE_PATH = '/library-backup.json';
 
 // Refresh token is long-lived and persisted; the short-lived access token
-// is kept in memory only (state.accessToken) and re-derived from the
+// is kept in memory only (dbxState.accessToken) and re-derived from the
 // refresh token whenever the app restarts.
 const REFRESH_TOKEN_KEY = 'dbx_refresh_token';
 // The PKCE code verifier only needs to survive the redirect round-trip to
 // Dropbox and back, so sessionStorage (not localStorage) is enough for it.
 const CODE_VERIFIER_KEY = 'dbx_code_verifier';
 
-const state = {
+const dbxState = {
   accessToken: null,
   accessTokenExpiresAt: 0, // epoch ms
 };
@@ -142,8 +142,8 @@ function isConnected() {
 /** Forgets the linked Dropbox account. Does not affect files already synced. */
 function disconnect() {
   localStorage.removeItem(REFRESH_TOKEN_KEY);
-  state.accessToken = null;
-  state.accessTokenExpiresAt = 0;
+  dbxState.accessToken = null;
+  dbxState.accessTokenExpiresAt = 0;
 }
 
 // ---------- OAuth flow ----------
@@ -214,8 +214,8 @@ async function handleAuthRedirect() {
   }
   const data = await resp.json();
   localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token);
-  state.accessToken = data.access_token;
-  state.accessTokenExpiresAt = Date.now() + data.expires_in * 1000;
+  dbxState.accessToken = data.access_token;
+  dbxState.accessTokenExpiresAt = Date.now() + data.expires_in * 1000;
   return true;
 }
 
@@ -229,8 +229,8 @@ async function getAccessToken() {
     throw new Error('Dropbox is not connected.');
   }
   // 60s safety margin before expiry.
-  if (state.accessToken && Date.now() < state.accessTokenExpiresAt - 60000) {
-    return state.accessToken;
+  if (dbxState.accessToken && Date.now() < dbxState.accessTokenExpiresAt - 60000) {
+    return dbxState.accessToken;
   }
 
   const resp = await fetch('https://api.dropboxapi.com/oauth2/token', {
@@ -248,9 +248,9 @@ async function getAccessToken() {
     throw new Error('Dropbox connection expired. Please reconnect.');
   }
   const data = await resp.json();
-  state.accessToken = data.access_token;
-  state.accessTokenExpiresAt = Date.now() + data.expires_in * 1000;
-  return state.accessToken;
+  dbxState.accessToken = data.access_token;
+  dbxState.accessTokenExpiresAt = Date.now() + data.expires_in * 1000;
+  return dbxState.accessToken;
 }
 
 // ---------- File operations ----------
